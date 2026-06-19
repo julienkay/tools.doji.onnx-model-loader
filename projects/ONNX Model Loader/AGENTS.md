@@ -1,0 +1,1 @@
+look for AGENTS.md in the repository root at `../..`

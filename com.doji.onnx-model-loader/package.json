@@ -4,12 +4,13 @@
   "displayName": "ONNX Model Loader",
   "description": "A runtime ONNX model loader for Unity Inference Engine",
   "dependencies": {
-    "com.unity.ai.inference": "2.3.0"
+    "com.doji.formats.onnx": "1.0.0",
+    "com.unity.ai.inference": "2.6.1"
   },
   "author": {
     "name": "Doji Technologies",
-    "email": "support@doji-tech.com",
-    "url": "https://www.doji-tech.com/"
+    "url": "https://www.doji-tech.com/",
+    "email": "support@doji-tech.com"
   },
   "documentationUrl": "https://docs.doji-tech.com/com.doji.onnx-model-loader/",
   "samples": [
