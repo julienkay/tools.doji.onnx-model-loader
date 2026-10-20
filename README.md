@@ -7,5 +7,5 @@ A runtime ONNX model loader for Unity Inference Engine
 
 [OpenUPM] · [Documentation (coming soon)]
 
-[OpenUPM]: https://openupm.com/packages/com.doji.onnx-model-loader
-[Documentation (coming soon)]: https://github.com/julienkay/com.doji.onnx-model-loader
+[OpenUPM]: https://openupm.com/packages/tools.doji.onnx-model-loader
+[Documentation (coming soon)]: https://github.com/julienkay/tools.doji.onnx-model-loader

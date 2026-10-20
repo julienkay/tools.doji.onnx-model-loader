@@ -6,7 +6,7 @@
           "files": [
             "**/*.cs"
           ],
-          "src": "../com.doji.onnx-model-loader"
+          "src": "../tools.doji.onnx-model-loader"
         }
       ],
       "dest": "api",

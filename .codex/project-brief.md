@@ -9,7 +9,7 @@ model or materializing tensor payloads.
 
 ## Repository Layout
 
-- `com.doji.onnx-model-loader/`: package source, tests, samples, and package
+- `tools.doji.onnx-model-loader/`: package source, tests, samples, and package
   manifest.
 - `projects/ONNX Model Loader/`: Unity companion project used to work on and
   test the package.
@@ -18,13 +18,13 @@ model or materializing tensor payloads.
 
 ## Package Boundaries
 
-`com.doji.onnx-model-loader` depends on `com.doji.formats.onnx` for generated
+`tools.doji.onnx-model-loader` depends on `tools.doji.formats.onnx` for generated
 ONNX schema types and shared protobuf runtime helpers in the `Doji.ONNX`
 namespace.
 
 Do not modify generated ONNX schema code in this package. Generated schema
 types, the generator, and shared protobuf reader behavior belong in
-`G:\Unity\com.doji.formats.onnx`.
+`G:\Unity\tools.doji.formats.onnx`.
 
 Loader-specific utilities belong in this package. Examples include:
 

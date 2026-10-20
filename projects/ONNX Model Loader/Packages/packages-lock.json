@@ -1,17 +1,17 @@
 {
   "dependencies": {
-    "com.doji.formats.onnx": {
-      "version": "file:../../../../com.doji.formats.onnx/com.doji.formats.onnx",
+    "tools.doji.formats.onnx": {
+      "version": "file:../../../../tools.doji.formats.onnx/tools.doji.formats.onnx",
       "depth": 0,
       "source": "local",
       "dependencies": {}
     },
-    "com.doji.onnx-model-loader": {
-      "version": "file:../../../com.doji.onnx-model-loader",
+    "tools.doji.onnx-model-loader": {
+      "version": "file:../../../tools.doji.onnx-model-loader",
       "depth": 0,
       "source": "local",
       "dependencies": {
-        "com.doji.formats.onnx": "1.0.0",
+        "tools.doji.formats.onnx": "1.0.0",
         "com.unity.ai.inference": "2.6.1"
       }
     },

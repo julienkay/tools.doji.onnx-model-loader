@@ -9,7 +9,7 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
 {
     public class ONNXModelLoaderTests
     {
-        const string ModelsDirectory = "Packages/com.doji.onnx-model-loader/Tests/Editor/Models";
+        const string ModelsDirectory = "Packages/tools.doji.onnx-model-loader/Tests/Editor/Models";
 
         [TestCase("Adder.onnx", 2, 1, 1, "Add")]
         [TestCase("Model.onnx", 1, 1, 12, "Relu")]
@@ -57,7 +57,7 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
                 Assert.That(metadata.IRVersion, Is.EqualTo(10));
                 Assert.That(metadata.ProducerName, Is.EqualTo("metadata-test"));
                 Assert.That(metadata.ProducerVersion, Is.EqualTo("1.2.3"));
-                Assert.That(metadata.Domain, Is.EqualTo("com.doji.test"));
+                Assert.That(metadata.Domain, Is.EqualTo("tools.doji.test"));
                 Assert.That(metadata.ModelVersion, Is.EqualTo(42));
                 Assert.That(metadata.DocString, Is.EqualTo("metadata without graph load"));
                 Assert.That(metadata.MetadataProps, Contains.Key("purpose"));
@@ -82,7 +82,7 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
             Assert.That(modelProto.IrVersion, Is.EqualTo(10));
             Assert.That(modelProto.ProducerName, Is.EqualTo("metadata-test"));
             Assert.That(modelProto.ProducerVersion, Is.EqualTo("1.2.3"));
-            Assert.That(modelProto.Domain, Is.EqualTo("com.doji.test"));
+            Assert.That(modelProto.Domain, Is.EqualTo("tools.doji.test"));
             Assert.That(modelProto.ModelVersion, Is.EqualTo(42));
             Assert.That(modelProto.DocString, Is.EqualTo("metadata without graph load"));
             Assert.That(modelProto.MetadataProps, Has.Count.EqualTo(1));
@@ -119,7 +119,7 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
             WriteVarintField(stream, 1, 10);
             WriteStringField(stream, 2, "metadata-test");
             WriteStringField(stream, 3, "1.2.3");
-            WriteStringField(stream, 4, "com.doji.test");
+            WriteStringField(stream, 4, "tools.doji.test");
             WriteVarintField(stream, 5, 42);
             WriteStringField(stream, 6, "metadata without graph load");
 

@@ -4,14 +4,14 @@
 
 ONNX Model Loader is a Unity package that loads ONNX models at runtime for use
 with Unity Inference Engine. The package lives in
-`com.doji.onnx-model-loader/`; `projects/ONNX Model Loader/` is the Unity
+`tools.doji.onnx-model-loader/`; `projects/ONNX Model Loader/` is the Unity
 development project used to work on and test the package.
 
-This package depends on `com.doji.formats.onnx` for the generated ONNX schema
+This package depends on `tools.doji.formats.onnx` for the generated ONNX schema
 types and shared protobuf runtime helpers (`Doji.ONNX.Onnx.cs`,
 `ProtoReader.cs`). Do not modify generated ONNX schema code in this package;
 put loader-specific parsing utilities here, and make shared protobuf helper or
-generator/template changes in `G:\Unity\com.doji.formats.onnx`.
+generator/template changes in `G:\Unity\tools.doji.formats.onnx`.
 
 ## Source Of Truth
 
@@ -20,7 +20,7 @@ Prefer these locations:
 - repository root: orient from the repository root for searches, docs, and
   cross-package work; from the companion Unity project working directory, the
   repository root is `../..`
-- `com.doji.onnx-model-loader/`: local package under development
+- `tools.doji.onnx-model-loader/`: local package under development
 - `docs/`: user-facing package documentation only; keep maintainer notes and
   internal architecture docs out of DocFX content
 - `.codex/project-brief.md`: stable project intent, package boundaries, and

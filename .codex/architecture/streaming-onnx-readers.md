@@ -61,7 +61,7 @@ The reader uses the generated `Doji.ONNX` types only as return-value-compatible
 containers where needed and uses `ProtoReader` for primitive wire reads.
 
 Shared protobuf helpers and generated schema output are owned by
-`com.doji.formats.onnx`. If a reader needs a generally useful protobuf helper,
+`tools.doji.formats.onnx`. If a reader needs a generally useful protobuf helper,
 add it there first. Keep loader-specific parsing policy in this package.
 
 ## Test Expectations

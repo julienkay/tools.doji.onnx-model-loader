@@ -166,8 +166,8 @@ PlayerSettings:
   androidMaxAspectRatio: 2.1
   androidMinAspectRatio: 1
   applicationIdentifier:
-    Android: com.doji.onnxmodelloader
-    Standalone: com.doji.onnx-model-loader
+    Android: tools.doji.onnxmodelloader
+    Standalone: tools.doji.onnx-model-loader
   buildNumber:
     Standalone: 0
     VisionOS: 0
