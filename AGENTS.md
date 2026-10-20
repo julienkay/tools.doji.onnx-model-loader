@@ -1,40 +1,39 @@
 # AGENTS.md
 
-## Repository
+## Project Intent
 
-ONNX Model Loader is a Unity package that loads ONNX models at runtime for use
-with Unity Inference Engine. The package lives in
-`tools.doji.onnx-model-loader/`; `projects/ONNX Model Loader/` is the Unity
-development project used to work on and test the package.
+This repository contains the Unity package `tools.doji.onnx-model-loader` and its companion project `ONNX Model Loader`.
 
-This package depends on `tools.doji.formats.onnx` for the generated ONNX schema
-types and shared protobuf runtime helpers (`Doji.ONNX.Onnx.cs`,
-`ProtoReader.cs`). Do not modify generated ONNX schema code in this package;
-put loader-specific parsing utilities here, and make shared protobuf helper or
-generator/template changes in `G:\Unity\tools.doji.formats.onnx`.
+Loads ONNX files at runtime into Unity Inference Engine (Sentis) models.
+
+Unity 6000.3 for development; the package supports 6000.3 LTS and later.
+
+## Package Direction
+
+- Follow `VISION.md` for durable product direction, scope and the decision test.
+- Match the Sentis ONNX importer: a model that imports in the Editor must load at runtime with the same result.
+- Parse with `tools.doji.formats.onnx`. Do not edit generated `Doji.ONNX` schema code here; shared protobuf helper and generator changes go into `G:\Unity\tools.doji.formats.onnx`.
+- Metadata and signature readers stream the file and seek past payloads; memory depends on the returned data, not on the file size.
+- The package is in active development. Prefer the current design over backwards compatibility.
+- Keep documentation about the current design and behavior. Update it with the code; remove temporary notes once the work they track is done.
 
 ## Source Of Truth
 
 Prefer these locations:
 
-- repository root: orient from the repository root for searches, docs, and
-  cross-package work; from the companion Unity project working directory, the
-  repository root is `../..`
+- repository root: orient from the repository root for searches, docs, and cross-package work; from this companion Unity project working directory, the repository root is `../..`
 - `tools.doji.onnx-model-loader/`: local package under development
-- `docs/`: user-facing package documentation only; keep maintainer notes and
-  internal architecture docs out of DocFX content
-- `.codex/project-brief.md`: stable project intent, package boundaries, and
-  constraints
-- `.codex/architecture/`: durable maintainer reference docs; read only the
-  files relevant to the current task
+  - `Runtime/InferenceEngine`: converter, loader and streaming readers, compiled into `Unity.InferenceEngine` through an asmref
+  - `Tests/Editor`: EditMode tests and small test models
+- `docs/`: user-facing package documentation only; keep maintainer notes and internal architecture docs out of DocFX content
+- `internal-docs/`: design notes for maintainers; `internal-docs/README.md` indexes them. Read
+  `internal-docs/architecture.md` before a change to conversion, streaming readers, or the package boundary.
 - `projects/ONNX Model Loader/Assets`: companion-project assets and test scenes
 
 Prefer working in the package folder when functionality is package-owned.
 
-## Agent Instructions
+## Conventions
 
-- Read [docs/index.md](docs/index.md) before making project-level changes.
-- Read [.codex/project-brief.md](.codex/project-brief.md) before changing
-  package architecture, generated-code boundaries, or streaming ONNX parsers.
-- Unity project: do not run `dotnet build` or compile checks unless explicitly requested.
-- 
+When adding code:
+
+- organize scripts by task area; prefer colocated or clearly scoped folders such as docs-, tooling-, or workflow-specific script locations over a shared miscellaneous scripts bucket
