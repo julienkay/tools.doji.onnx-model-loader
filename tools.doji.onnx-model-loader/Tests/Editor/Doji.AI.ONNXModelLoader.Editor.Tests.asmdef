@@ -2,7 +2,6 @@
     "name": "Doji.AI.ONNXModelLoader.Editor.Tests",
     "rootNamespace": "Doji.AI.ONNXModelLoader.Editor.Tests",
     "references": [
-        "Doji.AI.ONNX.ModelLoader",
         "Unity.InferenceEngine",
         "Unity.InferenceEngine.Editor"
     ],

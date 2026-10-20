@@ -45,6 +45,60 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
         }
 
         [Test]
+        public void Convert_ConvWithPads_AppliesPadsAttribute()
+        {
+            var modelPath = Path.GetTempFileName();
+            try
+            {
+                File.WriteAllBytes(modelPath, BuildPaddedConvModel());
+                var model = OnnxModelLoader.Load(modelPath);
+
+                using var worker = new Worker(model, BackendType.CPU);
+                using var input = new Tensor<float>(new TensorShape(1, 1, 3, 3), Enumerable.Repeat(1f, 9).ToArray());
+                worker.Schedule(input);
+                var output = (Tensor<float>)worker.PeekOutput();
+
+                // pads=[1,1,1,1] grows the 3x3 input to 5x5. Without the attribute it stays 3x3.
+                Assert.That(output.shape, Is.EqualTo(new TensorShape(1, 1, 5, 5)));
+                var values = output.DownloadToArray();
+                Assert.That(values[0], Is.EqualTo(0f), "padded corner");
+                Assert.That(values[12], Is.EqualTo(2f), "center: input 1 times weight 2");
+            }
+            finally
+            {
+                File.Delete(modelPath);
+            }
+        }
+
+        /// <summary>Y = Conv(X, W) with a 1x1 kernel of value 2 and pads=[1,1,1,1].</summary>
+        static byte[] BuildPaddedConvModel()
+        {
+            var weight = new ProtoWriter()
+                .PackedInt64(1, 1, 1, 1, 1)
+                .Int64(2, ProtoWriter.DataTypeFloat)
+                .String(8, "W")
+                .Bytes(9, new ProtoWriter().RawFloat(2f).ToArray());
+            var conv = new ProtoWriter()
+                .String(1, "X")
+                .String(1, "W")
+                .String(2, "Y")
+                .String(4, "Conv")
+                .Message(5, ProtoWriter.IntsAttribute("kernel_shape", 1, 1))
+                .Message(5, ProtoWriter.IntsAttribute("pads", 1, 1, 1, 1));
+            var graph = new ProtoWriter()
+                .Message(1, conv)
+                .String(2, "padded_conv")
+                .Message(5, weight)
+                .Message(11, ProtoWriter.FloatTensorValueInfo("X", 1, 1, 3, 3))
+                .Message(12, ProtoWriter.FloatTensorValueInfo("Y", null));
+            return new ProtoWriter()
+                .Int64(1, 8)
+                .Message(8, new ProtoWriter().String(1, "").Int64(2, 13))
+                .Message(7, graph)
+                .ToArray();
+        }
+
+        [Test]
         public void LoadMetadata_SkipsGraphPayload()
         {
             var modelPath = Path.GetTempFileName();

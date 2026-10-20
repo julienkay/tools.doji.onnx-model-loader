@@ -19,46 +19,52 @@ namespace Doji.AI
             return converter.LoadMetadata(filePath);
         }
 
+        /// <summary>
+        /// Reads the top-level <c>ModelProto</c> fields and seeks past the graph, opset imports,
+        /// training info, functions, and device configurations, so no payload is loaded.
+        /// </summary>
         internal static ModelProto LoadModelMetadata(Stream stream)
         {
+            stream = ProtoReader.EnsureSeekable(stream);
+            long end = stream.Length;
             var msg = new ModelProto();
-            while (stream.Position < stream.Length)
+            while (stream.Position < end)
             {
-                uint tag = ProtoReader.ReadVarint32(stream);
+                uint tag = ProtoReader.ReadTag(stream);
                 int field = (int)(tag >> 3);
                 int wireType = (int)(tag & 7);
                 switch (field)
                 {
-                    case 1:
-                        msg.IrVersion = (long)ProtoReader.ReadVarint64(stream);
+                    case 1 when wireType == 0:
+                        msg.IrVersion = ProtoReader.ReadInt64(stream);
                         break;
-                    case 2:
-                        msg.ProducerName = ProtoReader.ReadString(stream);
+                    case 2 when wireType == 2:
+                        msg.ProducerName = ProtoReader.ReadString(stream, end);
                         break;
-                    case 3:
-                        msg.ProducerVersion = ProtoReader.ReadString(stream);
+                    case 3 when wireType == 2:
+                        msg.ProducerVersion = ProtoReader.ReadString(stream, end);
                         break;
-                    case 4:
-                        msg.Domain = ProtoReader.ReadString(stream);
+                    case 4 when wireType == 2:
+                        msg.Domain = ProtoReader.ReadString(stream, end);
                         break;
-                    case 5:
-                        msg.ModelVersion = (long)ProtoReader.ReadVarint64(stream);
+                    case 5 when wireType == 0:
+                        msg.ModelVersion = ProtoReader.ReadInt64(stream);
                         break;
-                    case 6:
-                        msg.DocString = ProtoReader.ReadString(stream);
+                    case 6 when wireType == 2:
+                        msg.DocString = ProtoReader.ReadString(stream, end);
                         break;
-                    case 14:
-                        msg.MetadataProps.Add(StringStringEntryProto.Deserialize(new MemoryStream(ProtoReader.ReadBytes(stream))));
+                    case 14 when wireType == 2:
+                    {
+                        long entryEnd = ProtoReader.ReadLengthDelimitedEnd(stream, end);
+                        var entry = new StringStringEntryProto();
+                        entry.MergeFrom(stream, entryEnd);
+                        msg.MetadataProps.Add(entry);
                         break;
-                    case 7:
-                    case 8:
-                    case 20:
-                    case 25:
-                    case 26:
-                        ProtoReader.SkipBytes(stream);
-                        break;
+                    }
                     default:
-                        ProtoReader.SkipField(stream, wireType);
+                        // Includes graph (7), opset_import (8), training_info (20), functions (25)
+                        // and configuration (26): skipped by seeking, never read.
+                        ProtoReader.SkipField(stream, wireType, end);
                         break;
                 }
             }

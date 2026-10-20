@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- List attributes (`INTS`, `FLOATS`, `STRINGS`), such as Conv `pads`, `kernel_shape` and `strides`, are read instead of silently replaced by defaults. The parser copy had wrong `AttributeType` values.
+- Negative `int32` values in tensors and attributes parse.
+- Installing the loader together with `tools.doji.formats.onnx` no longer defines the `Doji.ONNX` types twice (CS0433): the loader's parser copies are internal.
+
+### Changed
+
+- The loader's parser copies are generated from `tools.doji.formats.onnx` with `tools/sync-onnx-parser/sync.sh`. Use `OnnxModelSignatureReader` from `tools.doji.formats.onnx`.
+
 ## [1.0.0] - 2025-10-27
 
 - Initial Release

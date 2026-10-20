@@ -12,7 +12,7 @@ Unity 6000.3 for development; the package supports 6000.3 LTS and later.
 
 - Follow `VISION.md` for durable product direction, scope and the decision test.
 - Match the Sentis ONNX importer: a model that imports in the Editor must load at runtime with the same result.
-- Parse with `tools.doji.formats.onnx`. Do not edit generated `Doji.ONNX` schema code here; shared protobuf helper and generator changes go into `G:\Unity\tools.doji.formats.onnx`.
+- Parse with `tools.doji.formats.onnx`. `Runtime/InferenceEngine/Onnx/Onnx.cs` and `ProtoReader.cs` are internal copies: never edit them; change `G:\Unity\tools.doji.formats.onnx`, then run `tools/sync-onnx-parser/sync.sh`. `OnnxParserCopyTests` fails while a copy is out of date.
 - Metadata and signature readers stream the file and seek past payloads; memory depends on the returned data, not on the file size.
 - The package is in active development. Prefer the current design over backwards compatibility.
 - Keep documentation about the current design and behavior. Update it with the code; remove temporary notes once the work they track is done.
