@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+#if UNITY_EDITOR
 using UnityEditor.AssetImporters;
+#endif
 using UnityEngine;
 
 namespace Doji.AI.InferenceEngine
@@ -68,6 +70,8 @@ namespace Doji.AI.InferenceEngine
         }
     }
 
+#if UNITY_EDITOR
+    // Import callbacks exist only in the Editor; players load models without an import context.
     /// <summary>
     /// Interface for receiving callbacks for metadata during ONNX import.
     /// </summary>
@@ -108,4 +112,5 @@ namespace Doji.AI.InferenceEngine
         /// </remarks>
         void OnMetadataImported(AssetImportContext ctx, ONNXModelMetadata metadata);
     }
+#endif
 }
