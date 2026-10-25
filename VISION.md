@@ -20,12 +20,9 @@ file.
 - **Same model as the importer.** Follow the Sentis ONNX importer behavior.
   A model that imports in the Editor must load at runtime with the same
   layers, constants, and outputs.
-- **Parse with `tools.doji.formats.onnx`.** The converter compiles into
-  `Unity.InferenceEngine`, which cannot reference that package, so the loader
-  compiles internal copies of its generated schema types and `ProtoReader`.
-  The copies are generated and synced, never edited here. Parsing changes go
-  into `tools.doji.formats.onnx` first. Users get `OnnxModelSignatureReader`
-  through the package dependency.
+- **Parse with `tools.doji.formats.onnx`.** The loader has no parser code of
+  its own. Parsing changes go into `tools.doji.formats.onnx` first. Users get
+  `OnnxModelSignatureReader` through the package dependency.
 - **Track Sentis explicitly.** The converter depends on Sentis internals.
   Declare the supported Sentis version, and update the converter with each
   Sentis upgrade.

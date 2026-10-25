@@ -3,13 +3,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Doji.ONNX;
+using Unity.InferenceEngine;
 using Unity.InferenceEngine.Graph;
+using Layers = Unity.InferenceEngine.Layers;
 using Unity.Mathematics;
-using ONNXModelMetadata = Doji.AI.InferenceEngine.ONNXModelMetadata;
-using ONNXNodeWrapper = Doji.AI.InferenceEngine.ONNXNodeWrapper;
-using ONNXConstantsLoader = Doji.AI.InferenceEngine.ONNXConstantsLoader;
 
-namespace Unity.InferenceEngine
+namespace Doji.AI.InferenceEngine
 {
 
     /// <summary>

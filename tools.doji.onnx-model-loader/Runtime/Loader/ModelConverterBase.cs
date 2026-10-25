@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Unity.InferenceEngine;
 
-namespace Unity.InferenceEngine
+namespace Doji.AI.InferenceEngine
 {
     /// <summary>
     /// Base class for a converter from an ONNX or LiteRT model to Sentis format.

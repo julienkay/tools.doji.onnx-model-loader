@@ -1,14 +1,10 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using Doji.ONNX;
 using Unity.InferenceEngine;
 using Debug = Unity.InferenceEngine.Debug;
 using DataType = Unity.InferenceEngine.DataType;
-
-[assembly: InternalsVisibleTo("Unity.InferenceEngine.EditorTests")]
-[assembly: InternalsVisibleTo("Doji.AI.ONNXModelLoader.Editor.Tests")]
 
 namespace Doji.AI.InferenceEngine
 {

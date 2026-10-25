@@ -12,7 +12,7 @@ Unity 6000.3 for development; the package supports 6000.3 LTS and later.
 
 - Follow `VISION.md` for durable product direction, scope and the decision test.
 - Match the Sentis ONNX importer: a model that imports in the Editor must load at runtime with the same result.
-- Parse with `tools.doji.formats.onnx`. `Runtime/InferenceEngine/Onnx/Onnx.cs` and `ProtoReader.cs` are internal copies: never edit them; change `G:\Unity\tools.doji.formats.onnx`, then run `tools/sync-onnx-parser/sync.sh`. `OnnxParserCopyTests` fails while a copy is out of date.
+- Parse with `tools.doji.formats.onnx` (`Doji.Onnx`). Make parsing changes in `G:\Unity\tools.doji.formats.onnx`; do not add parser code here.
 - Metadata and signature readers stream the file and seek past payloads; memory depends on the returned data, not on the file size.
 - The package is in active development. Prefer the current design over backwards compatibility.
 - Keep documentation about the current design and behavior. Update it with the code; remove temporary notes once the work they track is done.
@@ -23,7 +23,8 @@ Prefer these locations:
 
 - repository root: orient from the repository root for searches, docs, and cross-package work; from this companion Unity project working directory, the repository root is `../..`
 - `tools.doji.onnx-model-loader/`: local package under development
-  - `Runtime/InferenceEngine`: converter, loader and streaming readers, compiled into `Unity.InferenceEngine` through an asmref
+  - `Runtime/Loader`: converter, loader and streaming readers, in assembly `Doji.AI.ONNXModelLoader`
+  - `Runtime/InferenceEngine`: asmref into `Unity.InferenceEngine` that only grants `InternalsVisibleTo`; add no code there
   - `Tests/Editor`: EditMode tests and small test models
 - `docs/`: user-facing package documentation only; keep maintainer notes and internal architecture docs out of DocFX content
 - `internal-docs/`: design notes for maintainers; `internal-docs/README.md` indexes them. Read
