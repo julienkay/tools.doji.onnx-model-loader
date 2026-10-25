@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - List attributes (`INTS`, `FLOATS`, `STRINGS`), such as Conv `pads`, `kernel_shape` and `strides`, are read instead of silently replaced by defaults. The parser copy had wrong `AttributeType` values.
 - Negative `int32` values in tensors and attributes parse.
 - Installing the loader together with `tools.doji.formats.onnx` no longer defines the `Doji.ONNX` types twice (CS0433).
+- A missing external weights file throws `FileNotFoundException` instead of returning `null`.
+- Conversion errors throw the public `OnnxImportException`, whose message names the model file and lists every error. Before, some errors returned a broken model, and unsupported operators gave only "See errors for details".
+- Conversion warnings, such as an unsupported attribute value replaced by its default, are logged with `Debug.LogWarning`.
 
 ### Changed
 

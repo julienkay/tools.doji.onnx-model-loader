@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Doji.ONNX;
 using Unity.InferenceEngine;
 using Unity.InferenceEngine.Graph;
@@ -42,13 +43,45 @@ namespace Doji.AI.InferenceEngine
             m_FilePath = filePath;
             m_DirectoryPath = Path.GetDirectoryName(m_FilePath);
 
-            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-            var modelProto = ModelProto.Deserialize(stream);
+            ModelProto modelProto;
+            using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+                modelProto = ModelProto.Deserialize(stream);
 
-            Model model = ConvertOnnxModel(modelProto);
+            Model model;
+            try
+            {
+                model = ConvertOnnxModel(modelProto);
+            }
+            catch (Exception e) when (e is OnnxImportException || e is LayerImportException || HasErrors)
+            {
+                throw new OnnxImportException(ErrorReport(e.Message), e);
+            }
+
+            if (HasErrors)
+                throw new OnnxImportException(ErrorReport(null));
+
+            foreach (var warning in ImportWarnings.Where(w => w.messageSeverity == WarningType.Warning))
+                UnityEngine.Debug.LogWarning($"{Path.GetFileName(m_FilePath)}: {PlainText(warning.message)}");
 
             return model;
         }
+
+        bool HasErrors => ImportWarnings.Any(w => w.messageSeverity == WarningType.Error);
+
+        /// <summary>Names the model and lists every recorded error, then the exception message if it adds one.</summary>
+        string ErrorReport(string exceptionMessage)
+        {
+            var lines = ImportWarnings
+                .Where(w => w.messageSeverity == WarningType.Error)
+                .Select(w => PlainText(w.message))
+                .ToList();
+            if (!string.IsNullOrEmpty(exceptionMessage) && !lines.Contains(PlainText(exceptionMessage)))
+                lines.Add(PlainText(exceptionMessage));
+            return $"Cannot load ONNX model {Path.GetFileName(m_FilePath)}:\n" + string.Join("\n", lines);
+        }
+
+        // Converter messages use rich-text tags for the Sentis importer inspector.
+        static string PlainText(string message) => Regex.Replace(message, "</?b>", "");
 
         /// <summary>
         /// Loads only the ONNX model-level metadata without deserializing the graph or tensor data.
@@ -1833,37 +1866,43 @@ namespace Doji.AI.InferenceEngine
             }
 
             var weightsStream = new Dictionary<string, FileStream>();
-            // Read constants from initializer list
-            foreach (TensorProto initializer in onnxModel.Graph.Initializer)
+            try
             {
-                if (initializer.DataLocation == TensorProto.Types.DataLocation.External)
+                // Read constants from initializer list
+                foreach (TensorProto initializer in onnxModel.Graph.Initializer)
                 {
-                    string name = initializer.ExternalData.Single(x => x.Key == "location").Value;
-                    if (!weightsStream.ContainsKey(name))
+                    if (initializer.DataLocation == TensorProto.Types.DataLocation.External)
                     {
-                        string filePath = Path.Combine(m_DirectoryPath, name);
-                        if (File.Exists(filePath))
-                            weightsStream.Add(name, File.OpenRead(Path.Combine(m_DirectoryPath, name)));
-                        else
+                        string name = initializer.ExternalData.Single(x => x.Key == "location").Value;
+                        if (!weightsStream.ContainsKey(name))
                         {
-                            var errorMessage = $"External Weights file not found! Expecting: {filePath}";
-                            Warn(WarningType.Error, errorMessage);
-                            return null;
+                            string filePath = Path.Combine(m_DirectoryPath, name);
+                            if (File.Exists(filePath))
+                                weightsStream.Add(name, File.OpenRead(Path.Combine(m_DirectoryPath, name)));
+                            else
+                            {
+                                throw new FileNotFoundException(
+                                    $"Cannot load ONNX model {Path.GetFileName(m_FilePath)}: external weights file {name} not found. Expected at {filePath}.",
+                                    filePath);
+                            }
                         }
+                        var stream = weightsStream[name];
+                        var constantTensor = ONNXConstantsLoader.LoadConstant(initializer, stream);
+                        tensors[initializer.Name] = gm.Constant(constantTensor);
                     }
-                    var stream = weightsStream[name];
-                    var constantTensor = ONNXConstantsLoader.LoadConstant(initializer, stream);
-                    tensors[initializer.Name] = gm.Constant(constantTensor);
-                }
-                else
-                {
-                    var constantTensor = ONNXConstantsLoader.LoadConstant(initializer);
-                    tensors[initializer.Name] = gm.Constant(constantTensor);
-                }
+                    else
+                    {
+                        var constantTensor = ONNXConstantsLoader.LoadConstant(initializer);
+                        tensors[initializer.Name] = gm.Constant(constantTensor);
+                    }
 
+                }
             }
-            foreach (var stream in weightsStream.Values)
-                stream.Dispose();
+            finally
+            {
+                foreach (var stream in weightsStream.Values)
+                    stream.Dispose();
+            }
 
             // NOTE: It's questionable whether we should be doing this since the ONNX specification requires the graph to be
             // topologically sorted, but at least one network encountered that was exported from keras2onnx v1.7.0 produced
@@ -2042,7 +2081,7 @@ namespace Doji.AI.InferenceEngine
 
             if (unsupportedDataTypes.Count > 0 || unsupportedOperators.Count > 0)
             {
-                throw new OnnxImportException("Model contains unsupported operators or data types. See errors for details.");
+                throw new OnnxImportException("Model contains unsupported operators or data types.");
             }
         }
 
@@ -2205,12 +2244,16 @@ namespace Doji.AI.InferenceEngine
     }
 
     /// <summary>
-    /// Represents an exception during the import of an ONNX model.
+    /// Thrown when an ONNX model cannot be converted. The message names the model file and lists
+    /// every conversion error, such as unsupported operators or data types.
     /// </summary>
-    class OnnxImportException : ImportException
+    public class OnnxImportException : Exception
     {
-        /// <inheritdoc cref="ImportException"/>
+        /// <summary>Initializes an exception with a message.</summary>
         public OnnxImportException(string message) : base(message) { }
+
+        /// <summary>Initializes an exception with a message and the exception that caused it.</summary>
+        public OnnxImportException(string message, Exception innerException) : base(message, innerException) { }
     }
 
     /// <summary>

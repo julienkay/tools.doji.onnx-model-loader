@@ -55,6 +55,7 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
 
         public const int AttributeTypeInts = 7;
         public const int AttributeTypeFloats = 6;
+        public const int AttributeTypeString = 3;
         public const int AttributeTypeStrings = 8;
         public const int DataTypeFloat = 1;
 
@@ -62,6 +63,27 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
         public static ProtoWriter IntsAttribute(string name, params long[] values)
         {
             return new ProtoWriter().String(1, name).Int64(20, AttributeTypeInts).PackedInt64(8, values);
+        }
+
+        /// <summary>An AttributeProto of type STRING.</summary>
+        public static ProtoWriter StringAttribute(string name, string value)
+        {
+            return new ProtoWriter().String(1, name).Int64(20, AttributeTypeString).String(4, value);
+        }
+
+        /// <summary>A float TensorProto whose data is in an external file at <paramref name="location"/>.</summary>
+        public static ProtoWriter ExternalFloatTensor(string name, string location, params long[] dims)
+        {
+            var tensor = new ProtoWriter();
+            foreach (var dim in dims)
+                tensor.Int64(1, dim);
+            return tensor
+                .Int64(2, DataTypeFloat)
+                .String(8, name)
+                .Message(13, new ProtoWriter().String(1, "location").String(2, location))
+                .Message(13, new ProtoWriter().String(1, "offset").String(2, "0"))
+                .Message(13, new ProtoWriter().String(1, "length").String(2, "4"))
+                .Int64(14, 1); // data_location = EXTERNAL
         }
 
         /// <summary>A ValueInfoProto for a float tensor; no shape when <paramref name="dims"/> is null.</summary>

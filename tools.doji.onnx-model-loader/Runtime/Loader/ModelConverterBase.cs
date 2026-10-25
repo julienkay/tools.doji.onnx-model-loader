@@ -91,19 +91,6 @@ namespace Doji.AI.InferenceEngine
     }
 
     /// <summary>
-    /// Represents an exception during the import of a model.
-    /// </summary>
-    class ImportException : Exception
-    {
-        /// <summary>
-        /// Initializes and returns an instance of `ImportException`.
-        /// </summary>
-        /// <param name="message">message</param>
-        protected ImportException(string message)
-            : base(message) { }
-    }
-
-    /// <summary>
     /// Represents an exception during the import of a layer.
     /// </summary>
     class LayerImportException : Exception

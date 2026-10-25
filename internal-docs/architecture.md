@@ -31,6 +31,12 @@ returns a Sentis `Model`. The converter follows the Sentis ONNX importer:
 `ONNXNodeWrapper` adapts nodes, `ONNXConstantsLoader` reads initializers,
 `ModelConverterBase` builds layers.
 
+The converter records problems with `Warn` instead of stopping, as the
+Sentis importer does. After conversion, `Convert` throws `OnnxImportException`
+if any error was recorded, with the model file name and every error message
+in plain text. Warnings are logged with `Debug.LogWarning`. A missing external
+weights file throws `FileNotFoundException`.
+
 ## Streaming readers
 
 Some callers need model data before a full conversion.
@@ -76,4 +82,3 @@ ONNX import APIs.
   upgrade can break it. No supported Sentis version range is declared beyond
   the `2.6.1` dependency.
 - The sample asmdef is named `Doji.Temp_delete_useReference instead.Samples`.
-- The companion project still uses Unity 6000.3.10f1.

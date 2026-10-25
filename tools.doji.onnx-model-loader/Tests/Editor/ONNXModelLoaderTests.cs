@@ -1,9 +1,13 @@
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Doji.AI;
+using Doji.AI.InferenceEngine;
 using NUnit.Framework;
 using Unity.InferenceEngine;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Doji.AI.ONNXModelLoader.Editor.Tests
 {
@@ -89,6 +93,107 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
                 .Message(1, conv)
                 .String(2, "padded_conv")
                 .Message(5, weight)
+                .Message(11, ProtoWriter.FloatTensorValueInfo("X", 1, 1, 3, 3))
+                .Message(12, ProtoWriter.FloatTensorValueInfo("Y", null));
+            return new ProtoWriter()
+                .Int64(1, 8)
+                .Message(8, new ProtoWriter().String(1, "").Int64(2, 13))
+                .Message(7, graph)
+                .ToArray();
+        }
+
+        [Test]
+        public void Load_MissingExternalWeights_ThrowsFileNotFound()
+        {
+            var weight = ProtoWriter.ExternalFloatTensor("W", "missing-weights.bin", 1, 1, 1, 1);
+            var exception = LoadTempModelThrows<FileNotFoundException>(ConvNode(), weight);
+
+            Assert.That(exception.Message, Does.Contain("missing-weights.bin"));
+        }
+
+        [Test]
+        public void Load_UnsupportedOperator_ThrowsWithOperatorAndModelName()
+        {
+            var node = new ProtoWriter().String(1, "X").String(2, "Y").String(4, "NotAnOnnxOperator");
+            var exception = LoadTempModelThrows<OnnxImportException>(node);
+
+            Assert.That(exception.Message, Does.Contain("NotAnOnnxOperator"));
+            Assert.That(exception.Message, Does.Contain(".onnx"));
+            Assert.That(exception.Message, Does.Not.Contain("<b>"));
+        }
+
+        [Test]
+        public void Load_ConversionError_Throws()
+        {
+            // Constant needs one of its value attributes; the converter records an error and goes on.
+            var node = new ProtoWriter().String(2, "Y").String(4, "Constant");
+            var exception = LoadTempModelThrows<OnnxImportException>(node);
+
+            Assert.That(exception.Message, Does.Contain("Constant"));
+        }
+
+        [Test]
+        public void OnnxImportException_IsPublic()
+        {
+            Assert.That(typeof(OnnxImportException).IsPublic, Is.True);
+        }
+
+        [Test]
+        public void Load_UnsupportedAttributeValue_LogsWarning()
+        {
+            var node = ConvNode().Message(5, ProtoWriter.StringAttribute("auto_pad", "NOT_A_MODE"));
+            var weight = new ProtoWriter()
+                .PackedInt64(1, 1, 1, 1, 1)
+                .Int64(2, ProtoWriter.DataTypeFloat)
+                .String(8, "W")
+                .Bytes(9, new ProtoWriter().RawFloat(2f).ToArray());
+
+            LogAssert.Expect(LogType.Warning, new Regex(@"\.onnx: .*auto_pad `NOT_A_MODE`"));
+            var modelPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".onnx");
+            try
+            {
+                File.WriteAllBytes(modelPath, BuildSingleNodeModel(node, weight));
+                Assert.That(OnnxModelLoader.Load(modelPath), Is.Not.Null);
+            }
+            finally
+            {
+                File.Delete(modelPath);
+            }
+        }
+
+        static ProtoWriter ConvNode()
+        {
+            return new ProtoWriter()
+                .String(1, "X")
+                .String(1, "W")
+                .String(2, "Y")
+                .String(4, "Conv")
+                .Message(5, ProtoWriter.IntsAttribute("kernel_shape", 1, 1));
+        }
+
+        static T LoadTempModelThrows<T>(ProtoWriter node, params ProtoWriter[] initializers) where T : System.Exception
+        {
+            var modelPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".onnx");
+            try
+            {
+                File.WriteAllBytes(modelPath, BuildSingleNodeModel(node, initializers));
+                return Assert.Throws<T>(() => OnnxModelLoader.Load(modelPath));
+            }
+            finally
+            {
+                File.Delete(modelPath);
+            }
+        }
+
+        /// <summary>A model with input X (1x1x3x3), output Y and one node.</summary>
+        static byte[] BuildSingleNodeModel(ProtoWriter node, params ProtoWriter[] initializers)
+        {
+            var graph = new ProtoWriter()
+                .Message(1, node)
+                .String(2, "single_node");
+            foreach (var initializer in initializers)
+                graph.Message(5, initializer);
+            graph
                 .Message(11, ProtoWriter.FloatTensorValueInfo("X", 1, 1, 3, 3))
                 .Message(12, ProtoWriter.FloatTensorValueInfo("Y", null));
             return new ProtoWriter()
