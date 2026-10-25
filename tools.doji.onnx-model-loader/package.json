@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "displayName": "ONNX Model Loader",
   "description": "A runtime ONNX model loader for Unity Inference Engine",
+  "unity": "6000.3",
   "dependencies": {
     "tools.doji.formats.onnx": "1.0.0",
     "com.unity.ai.inference": "2.6.1"

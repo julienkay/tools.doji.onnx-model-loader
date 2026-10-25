@@ -2,7 +2,7 @@
   "metadata": [
     {
       "src": [
-        { "files": [ "doji.temp_delete_usereference instead.csproj" ], "src": "../projects/ONNX Model Loader" }
+        { "files": [ "Doji.AI.ONNXModelLoader.csproj" ], "src": "../projects/ONNX Model Loader" }
       ],
       "dest": "api",
       "includePrivateMembers": false,

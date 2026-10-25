@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - The loader compiles into its own assembly, `Doji.AI.ONNXModelLoader`, and parses with `tools.doji.formats.onnx` instead of its own parser copy. Reference `Doji.AI.ONNXModelLoader` from your assembly definition. Use `OnnxModelSignatureReader` from `tools.doji.formats.onnx`.
 - The converter types moved from namespace `Unity.InferenceEngine` to `Doji.AI.InferenceEngine`. Only an `InternalsVisibleTo` attribute still compiles into the Sentis assembly.
+- Requires Unity 6000.3 or later, like `tools.doji.formats.onnx`.
 
 ## [1.0.0] - 2025-10-27
 

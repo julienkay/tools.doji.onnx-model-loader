@@ -1,2 +1,6 @@
 - name: ONNX Model Loader
   href: ../index.md
+- name: Getting started
+  href: getting-started.md
+- name: Loading models
+  href: loading-models.md
