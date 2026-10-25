@@ -13,7 +13,7 @@ file.
 
 - Developers of applications that load models chosen after build time.
 - Packages that download models at runtime, such as a future runtime mode of
-  `tools.doji.hf-hub`.
+  `tools.doji.model-hub`.
 
 ## Principles
 
