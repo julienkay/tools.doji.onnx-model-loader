@@ -23,7 +23,7 @@ ONNX Model Loader is published on OpenUPM. Add a scoped registry for
 Package Manager also installs the dependencies:
 
 - Inference Engine (`com.unity.ai.inference`) 2.6.1
-- ONNX (`tools.doji.formats.onnx`), which parses the ONNX files
+- ONNX Format (`tools.doji.formats.onnx`), which parses the ONNX files
 
 ONNX Model Loader requires Unity 6000.3 LTS or later.
 
