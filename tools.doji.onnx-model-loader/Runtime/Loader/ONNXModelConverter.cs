@@ -101,19 +101,20 @@ namespace Doji.AI.InferenceEngine
         /// <summary>Loads an initializer or a Constant node value.</summary>
         ConstantTensor LoadConstant(TensorProto tensorProto)
         {
-            if (tensorProto.DataLocation == TensorProto.Types.DataLocation.External)
+            // OnnxExternalDataReader validates and opens each external file once, so there is no
+            // per-tensor existence check. A missing file only gets a clearer message here.
+            try
+            {
+                return ONNXConstantsLoader.LoadConstant(m_ModelData, tensorProto, m_ExternalData, m_BorrowTensorData);
+            }
+            catch (Exception e) when (e is FileNotFoundException || e is DirectoryNotFoundException)
             {
                 string name = tensorProto.ExternalData.FirstOrDefault(x => x.Key == "location")?.Value;
                 string filePath = Path.Combine(m_DirectoryPath, name ?? "");
-                if (name == null || !File.Exists(filePath))
-                {
-                    throw new FileNotFoundException(
-                        $"Cannot load ONNX model {Path.GetFileName(m_FilePath)}: external weights file {name} not found. Expected at {filePath}.",
-                        filePath);
-                }
+                throw new FileNotFoundException(
+                    $"Cannot load ONNX model {Path.GetFileName(m_FilePath)}: external weights file {name} not found. Expected at {filePath}.",
+                    filePath, e);
             }
-
-            return ONNXConstantsLoader.LoadConstant(m_ModelData, tensorProto, m_ExternalData, m_BorrowTensorData);
         }
 
         bool HasErrors => ImportWarnings.Any(w => w.messageSeverity == WarningType.Error);
