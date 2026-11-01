@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - List attributes (`INTS`, `FLOATS`, `STRINGS`), such as Conv `pads`, `kernel_shape` and `strides`, are read instead of silently replaced by defaults. The parser copy had wrong `AttributeType` values.
 - Negative `int32` values in tensors and attributes parse.
+- LSTM `activation_alpha` and `activation_beta` are read instead of silently replaced by defaults. Like ONNX Runtime, each value goes to the next activation that takes that argument (for example LeakyRelu, HardSigmoid or ScaledTanh).
 - Installing the loader together with `tools.doji.formats.onnx` no longer defines the `Doji.ONNX` types twice (CS0433).
 - A missing external weights file throws `FileNotFoundException` instead of returning `null`.
 - External tensor data is read from its `offset` entry. Before, tensors were read one after another from the start of the file, so files with gaps or another order loaded wrong weights.

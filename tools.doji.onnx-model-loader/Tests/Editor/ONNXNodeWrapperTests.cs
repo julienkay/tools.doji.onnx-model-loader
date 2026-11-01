@@ -34,19 +34,39 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
             Assert.That(node.GetOptionalIntArray("axes", null), Is.EqualTo(new[] { -1, -2 }));
         }
 
-        // GetOptionalFloatArray looks for type FLOAT, not FLOATS, exactly like the Sentis
-        // importer it follows, so it is not used here.
+        static ProtoWriter FloatsAttribute(string name, params float[] values)
+        {
+            var floats = new ProtoWriter();
+            foreach (var value in values)
+                floats.RawFloat(value);
+            return new ProtoWriter()
+                .String(1, name)
+                .Int64(20, ProtoWriter.AttributeTypeFloats)
+                .Message(7, floats);
+        }
+
         [Test]
         public void GetRequiredFloatArray_FloatsAttribute_ReturnsValues()
         {
-            var floats = new ProtoWriter().RawFloat(0.5f).RawFloat(2f);
-            var attribute = new ProtoWriter()
-                .String(1, "scales")
-                .Int64(20, ProtoWriter.AttributeTypeFloats)
-                .Message(7, floats);
-            var node = ParseNode(new ProtoWriter().String(4, "Resize").Message(5, attribute));
+            var node = ParseNode(new ProtoWriter().String(4, "Resize").Message(5, FloatsAttribute("scales", 0.5f, 2f)));
 
             Assert.That(node.GetRequiredFloatArray("scales"), Is.EqualTo(new[] { 0.5f, 2f }));
+        }
+
+        [Test]
+        public void GetOptionalFloatArray_FloatsAttribute_ReturnsValues()
+        {
+            var node = ParseNode(new ProtoWriter().String(4, "LSTM").Message(5, FloatsAttribute("activation_alpha", 0.25f, 3f)));
+
+            Assert.That(node.GetOptionalFloatArray("activation_alpha", null), Is.EqualTo(new[] { 0.25f, 3f }));
+        }
+
+        [Test]
+        public void GetOptionalFloatArray_MissingAttribute_ReturnsDefault()
+        {
+            var node = ParseNode(new ProtoWriter().String(4, "LSTM"));
+
+            Assert.That(node.GetOptionalFloatArray("activation_alpha", null), Is.Null);
         }
 
         [Test]

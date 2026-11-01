@@ -308,6 +308,45 @@ namespace Doji.AI.InferenceEngine
             return MapOperatorType(opTypeString) != ONNXOperatorType.Unknown;
         }
 
+        /// <summary>
+        /// Assigns LSTM <c>activation_alpha</c> and <c>activation_beta</c> values to
+        /// <paramref name="activations"/> as ONNX Runtime does: values are consumed in order,
+        /// only by activations that take that argument. Activations without a value get the
+        /// default of the matching ONNX operator.
+        /// </summary>
+        internal static void GetLstmActivationArguments(Layers.RnnActivation[] activations, float[] alphaValues, float[] betaValues, out float[] alpha, out float[] beta)
+        {
+            alpha = new float[activations.Length];
+            beta = new float[activations.Length];
+            var nextAlpha = 0;
+            var nextBeta = 0;
+            for (var i = 0; i < activations.Length; i++)
+            {
+                float? defaultAlpha = activations[i] switch
+                {
+                    Layers.RnnActivation.Affine => 1.0f,
+                    Layers.RnnActivation.LeakyRelu => 0.01f,
+                    Layers.RnnActivation.ThresholdedRelu => 1.0f,
+                    Layers.RnnActivation.ScaledTanh => 1.0f,
+                    Layers.RnnActivation.HardSigmoid => 0.2f,
+                    Layers.RnnActivation.Elu => 1.0f,
+                    _ => null
+                };
+                float? defaultBeta = activations[i] switch
+                {
+                    Layers.RnnActivation.Affine => 0.0f,
+                    Layers.RnnActivation.ScaledTanh => 1.0f,
+                    Layers.RnnActivation.HardSigmoid => 0.5f,
+                    _ => null
+                };
+
+                if (defaultAlpha.HasValue)
+                    alpha[i] = alphaValues != null && nextAlpha < alphaValues.Length ? alphaValues[nextAlpha++] : defaultAlpha.Value;
+                if (defaultBeta.HasValue)
+                    beta[i] = betaValues != null && nextBeta < betaValues.Length ? betaValues[nextBeta++] : defaultBeta.Value;
+            }
+        }
+
         void OnNode(GraphModule gm, Dictionary<string, Node> tensors, long defaultOpsetVersion, ONNXNodeWrapper node)
         {
             Node GetInput(int index)
@@ -1152,12 +1191,6 @@ namespace Doji.AI.InferenceEngine
                     };
                     var numDirections = direction == Layers.RnnDirection.Bidirectional ? 2 : 1;
 
-                    var activationAlphaNode = node.GetOptionalFloatArray("activation_alpha", null);
-                    var activationBetaNode = node.GetOptionalFloatArray("activation_beta", null);
-
-                    var activationAlpha = new float[3 * numDirections];
-                    var activationBeta = new float[3 * numDirections];
-
                     var activationsStringArray = node.GetOptionalStringArray("activations", null);
                     var activations = new Layers.RnnActivation[3 * numDirections];
                     for (var i = 0; i < 3 * numDirections; i++)
@@ -1185,39 +1218,14 @@ namespace Doji.AI.InferenceEngine
                                 _ => Warn(WarningType.Warning, $"activation `{activationsStringArray[i]}` is not supported for LSTM, using `{defaultActivation}`.", defaultActivation)
                             };
                         }
-
-                        if (activationAlphaNode == null || activationAlphaNode.Length <= i)
-                        {
-                            activationAlpha[i] = activations[i] switch
-                            {
-                                Layers.RnnActivation.Affine => 1.0f,
-                                Layers.RnnActivation.LeakyRelu => 0.01f,
-                                Layers.RnnActivation.ThresholdedRelu => 1.0f,
-                                Layers.RnnActivation.ScaledTanh => 1.0f,
-                                Layers.RnnActivation.HardSigmoid => 0.2f,
-                                Layers.RnnActivation.Elu => 1.0f,
-                                _ => 0
-                            };
-                        }
-                        else
-                        {
-                            activationAlpha[i] = activationAlphaNode[i];
-                        }
-
-                        if (activationBetaNode == null || activationBetaNode.Length <= i)
-                        {
-                            activationBeta[i] = activations[i] switch
-                            {
-                                Layers.RnnActivation.ScaledTanh => 1.0f,
-                                Layers.RnnActivation.HardSigmoid => 0.5f,
-                                _ => 0
-                            };
-                        }
-                        else
-                        {
-                            activationBeta[i] = activationBetaNode[i];
-                        }
                     }
+
+                    GetLstmActivationArguments(
+                        activations,
+                        node.GetOptionalFloatArray("activation_alpha", null),
+                        node.GetOptionalFloatArray("activation_beta", null),
+                        out var activationAlpha,
+                        out var activationBeta);
 
                     var clip = node.GetOptionalFloat("clip", float.MaxValue);
                     var inputForget = node.GetOptionalInt("input_forget", 0) != 0;

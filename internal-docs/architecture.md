@@ -97,14 +97,19 @@ ONNX import APIs.
 | `ONNXModelLoaderTests.cs` | Conversion of the models in `Tests/Editor/Models`, a Conv with `pads` run on the CPU, metadata reads that skip the graph |
 | `ConstantEncodingTests.cs` | Initializers in `raw_data`, typed fields, float16, double and external data with an offset give the same values; borrowed and converted constants |
 | `ONNXNodeWrapperTests.cs` | INTS, FLOATS, and STRINGS attributes parsed from wire bytes |
+| `LstmActivationArgumentsTests.cs` | LSTM `activation_alpha` and `activation_beta` assignment and defaults |
+
+## Differences from the Sentis importer
+
+- LSTM `activation_alpha` and `activation_beta` are read. Sentis looks for
+  attribute type `FLOAT` instead of `FLOATS`, so it always uses the defaults.
+- The values are consumed in order, only by activations that take that
+  argument, as ONNX Runtime does. Sentis assigns them by activation index.
 
 ## Known limits
 
 - The asmref adds assembly attributes to the Sentis assembly. It adds no
   types to it or to a Unity namespace.
-- `ONNXNodeWrapper.GetOptionalFloatArray` looks for attribute type `FLOAT`
-  instead of `FLOATS`, as the Sentis importer does. Only LSTM
-  `activation_alpha` and `activation_beta` use it.
 - The converter depends on Sentis internals through `InternalsVisibleTo`. A Sentis
   upgrade can break it. No supported Sentis version range is declared beyond
   the `2.6.1` dependency.

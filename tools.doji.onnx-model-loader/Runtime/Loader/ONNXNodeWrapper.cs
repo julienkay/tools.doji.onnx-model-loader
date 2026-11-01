@@ -130,7 +130,7 @@ namespace Doji.AI.InferenceEngine
 
         public float[] GetOptionalFloatArray(string name, float[] defaultValue)
         {
-            return TryFindAttribute(name, AttributeProto.Types.AttributeType.Float, out var attr) ? attr.Floats.ToArray() : defaultValue;
+            return TryFindAttribute(name, AttributeProto.Types.AttributeType.Floats, out var attr) ? attr.Floats.ToArray() : defaultValue;
         }
 
         public float[] GetRequiredFloatArray(string name)
