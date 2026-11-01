@@ -46,6 +46,8 @@ namespace Doji.AI.InferenceEngine
             // Tensor data stays in the file buffer until ONNXConstantsLoader reads it.
             m_ModelData = OnnxModelData.Load(filePath);
             m_BorrowTensorData = ShouldBorrowTensorData(m_ModelData);
+            // Opens each external data file once for the whole conversion.
+            m_ExternalData = new OnnxExternalDataReader(m_DirectoryPath);
 
             Model model;
             try
@@ -58,6 +60,8 @@ namespace Doji.AI.InferenceEngine
             }
             finally
             {
+                m_ExternalData.Dispose();
+                m_ExternalData = null;
                 m_ModelData = null;
             }
 
@@ -71,6 +75,7 @@ namespace Doji.AI.InferenceEngine
         }
 
         OnnxModelData m_ModelData;
+        OnnxExternalDataReader m_ExternalData;
         bool m_BorrowTensorData;
 
         /// <summary>
@@ -108,7 +113,7 @@ namespace Doji.AI.InferenceEngine
                 }
             }
 
-            return ONNXConstantsLoader.LoadConstant(m_ModelData, tensorProto, m_DirectoryPath, m_BorrowTensorData);
+            return ONNXConstantsLoader.LoadConstant(m_ModelData, tensorProto, m_ExternalData, m_BorrowTensorData);
         }
 
         bool HasErrors => ImportWarnings.Any(w => w.messageSeverity == WarningType.Error);

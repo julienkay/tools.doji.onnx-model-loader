@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using Doji.ONNX;
 using Unity.InferenceEngine;
 using Unity.Jobs;
@@ -16,9 +15,9 @@ namespace Doji.AI.InferenceEngine
         /// Loads the data of <paramref name="tensorProto"/>, an initializer or a Constant node value of
         /// <paramref name="data"/>. With <paramref name="borrow"/>, float32 and int32 raw_data reaches the
         /// constant as a segment of the file buffer, without a copy. Every other encoding is converted
-        /// into one new array. External data is read from files in <paramref name="directoryPath"/>.
+        /// into one new array. External data is read with <paramref name="externalData"/>.
         /// </summary>
-        public static ConstantTensor LoadConstant(OnnxModelData data, TensorProto tensorProto, string directoryPath, bool borrow)
+        public static ConstantTensor LoadConstant(OnnxModelData data, TensorProto tensorProto, OnnxExternalDataReader externalData, bool borrow)
         {
             if (!data.TryGetData(tensorProto, out var tensor))
                 throw new OnnxLayerImportException($"Tensor {tensorProto.Name} is not part of the loaded model.");
@@ -32,7 +31,8 @@ namespace Doji.AI.InferenceEngine
                 var range = tensor.GetExternalRange();
                 long length = range.Length ?? (long)shape.length * ElementSize(dataType);
                 var bytes = new byte[checked((int)length)];
-                tensor.ReadExternalTo(directoryPath, bytes);
+                // The byte[] overload avoids the copy Mono's Stream.Read(Span) makes.
+                externalData.Read(tensor, bytes);
                 return FromBytes(shape, dataType, bytes, keep: true);
             }
 

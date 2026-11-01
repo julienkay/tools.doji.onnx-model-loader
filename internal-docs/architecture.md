@@ -46,9 +46,11 @@ initializer or Constant node value with `OnnxModelData.TryGetData`:
   conversions, which run the Sentis Burst cast jobs.
 - typed fields (`float_data`, `int64_data`, ...): `DecodeTo` writes the
   `raw_data` layout into a new array, which is then used or converted as above.
-- external data: `ReadExternalTo` reads the range given by `location`,
-  `offset` and `length` into the final array. The location must be relative
-  and stay inside the model directory.
+- external data: one `OnnxExternalDataReader` per conversion reads the range
+  given by `location`, `offset` and `length` into the final array. It opens
+  each file once and checks that the location is relative and stays inside the
+  model directory. The loader uses its `byte[]` overload, because Mono's
+  `Stream.Read(Span)` copies through a temporary buffer.
 
 A borrowed constant keeps the whole file buffer alive with the model,
 including metadata, converted tensors and constants that Sentis later
