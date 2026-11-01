@@ -41,20 +41,24 @@ namespace Doji.AI.InferenceEngine
         /// <returns>The converted Sentis model.</returns>
         public override Model Convert(string filePath) {
             m_FilePath = filePath;
-            m_DirectoryPath = Path.GetDirectoryName(m_FilePath);
+            m_DirectoryPath = Path.GetDirectoryName(Path.GetFullPath(m_FilePath));
 
-            ModelProto modelProto;
-            using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
-                modelProto = ModelProto.Deserialize(stream);
+            // Tensor data stays in the file buffer until ONNXConstantsLoader reads it.
+            m_ModelData = OnnxModelData.Load(filePath);
+            m_BorrowTensorData = ShouldBorrowTensorData(m_ModelData);
 
             Model model;
             try
             {
-                model = ConvertOnnxModel(modelProto);
+                model = ConvertOnnxModel(m_ModelData.Model);
             }
             catch (Exception e) when (e is OnnxImportException || e is LayerImportException || HasErrors)
             {
                 throw new OnnxImportException(ErrorReport(e.Message), e);
+            }
+            finally
+            {
+                m_ModelData = null;
             }
 
             if (HasErrors)
@@ -64,6 +68,47 @@ namespace Doji.AI.InferenceEngine
                 UnityEngine.Debug.LogWarning($"{Path.GetFileName(m_FilePath)}: {PlainText(warning.message)}");
 
             return model;
+        }
+
+        OnnxModelData m_ModelData;
+        bool m_BorrowTensorData;
+
+        /// <summary>
+        /// Borrowed constants keep the whole file buffer alive with the model. Borrow only when float32
+        /// and int32 raw_data fill at least half the buffer, so the model keeps little more than its weights.
+        /// </summary>
+        static bool ShouldBorrowTensorData(OnnxModelData data)
+        {
+            long borrowable = 0, bufferLength = 0;
+            foreach (var tensor in data.Tensors)
+            {
+                var dataType = (TensorProto.Types.DataType)tensor.Metadata.DataType;
+                if (dataType != TensorProto.Types.DataType.Float && dataType != TensorProto.Types.DataType.Int32)
+                    continue;
+                if (!tensor.TryGetRawBytes(out var bytes))
+                    continue;
+                borrowable += bytes.Count;
+                bufferLength = bytes.Array.Length;
+            }
+            return 2 * borrowable >= bufferLength;
+        }
+
+        /// <summary>Loads an initializer or a Constant node value.</summary>
+        ConstantTensor LoadConstant(TensorProto tensorProto)
+        {
+            if (tensorProto.DataLocation == TensorProto.Types.DataLocation.External)
+            {
+                string name = tensorProto.ExternalData.FirstOrDefault(x => x.Key == "location")?.Value;
+                string filePath = Path.Combine(m_DirectoryPath, name ?? "");
+                if (name == null || !File.Exists(filePath))
+                {
+                    throw new FileNotFoundException(
+                        $"Cannot load ONNX model {Path.GetFileName(m_FilePath)}: external weights file {name} not found. Expected at {filePath}.",
+                        filePath);
+                }
+            }
+
+            return ONNXConstantsLoader.LoadConstant(m_ModelData, tensorProto, m_DirectoryPath, m_BorrowTensorData);
         }
 
         bool HasErrors => ImportWarnings.Any(w => w.messageSeverity == WarningType.Error);
@@ -299,7 +344,7 @@ namespace Doji.AI.InferenceEngine
             {
                 case ONNXOperatorType.Constant when node.HasAttribute("value"):
                 {
-                    var constantTensor = ONNXConstantsLoader.LoadConstant(node.GetRequiredTensor("value"), m_DirectoryPath);
+                    var constantTensor = LoadConstant(node.GetRequiredTensor("value"));
                     var constantNode = gm.Constant(constantTensor);
                     SetOutput(constantNode);
                     break;
@@ -533,7 +578,7 @@ namespace Doji.AI.InferenceEngine
                         return;
                     }
 
-                    var constantTensor = ONNXConstantsLoader.LoadConstant(node.GetRequiredTensor("value"), m_DirectoryPath);
+                    var constantTensor = LoadConstant(node.GetRequiredTensor("value"));
                     if (constantTensor.dataType == DataType.Int)
                     {
                         var value = constantTensor.AsSpan<int>()[0];
@@ -1865,44 +1910,9 @@ namespace Doji.AI.InferenceEngine
                 tensors[input.Name] = inputNode;
             }
 
-            var weightsStream = new Dictionary<string, FileStream>();
-            try
-            {
-                // Read constants from initializer list
-                foreach (TensorProto initializer in onnxModel.Graph.Initializer)
-                {
-                    if (initializer.DataLocation == TensorProto.Types.DataLocation.External)
-                    {
-                        string name = initializer.ExternalData.Single(x => x.Key == "location").Value;
-                        if (!weightsStream.ContainsKey(name))
-                        {
-                            string filePath = Path.Combine(m_DirectoryPath, name);
-                            if (File.Exists(filePath))
-                                weightsStream.Add(name, File.OpenRead(Path.Combine(m_DirectoryPath, name)));
-                            else
-                            {
-                                throw new FileNotFoundException(
-                                    $"Cannot load ONNX model {Path.GetFileName(m_FilePath)}: external weights file {name} not found. Expected at {filePath}.",
-                                    filePath);
-                            }
-                        }
-                        var stream = weightsStream[name];
-                        var constantTensor = ONNXConstantsLoader.LoadConstant(initializer, stream);
-                        tensors[initializer.Name] = gm.Constant(constantTensor);
-                    }
-                    else
-                    {
-                        var constantTensor = ONNXConstantsLoader.LoadConstant(initializer);
-                        tensors[initializer.Name] = gm.Constant(constantTensor);
-                    }
-
-                }
-            }
-            finally
-            {
-                foreach (var stream in weightsStream.Values)
-                    stream.Dispose();
-            }
+            // Read constants from initializer list
+            foreach (TensorProto initializer in onnxModel.Graph.Initializer)
+                tensors[initializer.Name] = gm.Constant(LoadConstant(initializer));
 
             // NOTE: It's questionable whether we should be doing this since the ONNX specification requires the graph to be
             // topologically sorted, but at least one network encountered that was exported from keras2onnx v1.7.0 produced

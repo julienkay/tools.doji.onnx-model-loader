@@ -1,118 +1,158 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
 using Doji.ONNX;
 using Unity.InferenceEngine;
-using UnityEngine.Assertions;
 using Unity.Jobs;
+using OnnxDataType = Doji.ONNX.TensorProto.Types.DataType;
 
 namespace Doji.AI.InferenceEngine
 {
+    /// <summary>
+    /// Builds Sentis constants from tensor data that <see cref="OnnxModelData"/> left in the file buffer.
+    /// </summary>
     static class ONNXConstantsLoader
     {
-        public static ConstantTensor LoadConstant(TensorProto tensorProto, FileStream weightStream)
+        /// <summary>
+        /// Loads the data of <paramref name="tensorProto"/>, an initializer or a Constant node value of
+        /// <paramref name="data"/>. With <paramref name="borrow"/>, float32 and int32 raw_data reaches the
+        /// constant as a segment of the file buffer, without a copy. Every other encoding is converted
+        /// into one new array. External data is read from files in <paramref name="directoryPath"/>.
+        /// </summary>
+        public static ConstantTensor LoadConstant(OnnxModelData data, TensorProto tensorProto, string directoryPath, bool borrow)
         {
+            if (!data.TryGetData(tensorProto, out var tensor))
+                throw new OnnxLayerImportException($"Tensor {tensorProto.Name} is not part of the loaded model.");
+
             var shape = GetShape(tensorProto);
+            var dataType = (OnnxDataType)tensorProto.DataType;
 
-            Assert.AreEqual(tensorProto.DataLocation, TensorProto.Types.DataLocation.External);
-
-            var length = (int)weightStream.Length;
-
-            foreach (var externalData in tensorProto.ExternalData)
+            if (tensor.IsExternal)
             {
-                if (externalData.Key != "length")
-                    continue;
-                length = int.Parse(externalData.Value);
+                // Read straight into the final array when no conversion follows.
+                var range = tensor.GetExternalRange();
+                long length = range.Length ?? (long)shape.length * ElementSize(dataType);
+                var bytes = new byte[checked((int)length)];
+                tensor.ReadExternalTo(directoryPath, bytes);
+                return FromBytes(shape, dataType, bytes, keep: true);
             }
 
-            byte[] byteArray = new byte[length];
-            weightStream.Read(byteArray, 0, length);
+            if (tensor.TryGetRawBytes(out var raw))
+                return FromBytes(shape, dataType, raw, keep: borrow);
 
-            return GetTensorData(byteArray, length, shape, (TensorProto.Types.DataType)tensorProto.DataType);
+            // Typed fields (float_data, int64_data, ...): DecodeTo writes the raw_data layout.
+            var decoded = new byte[checked((int)tensor.DecodedByteLength)];
+            tensor.DecodeTo(decoded);
+            return FromBytes(shape, dataType, decoded, keep: true);
         }
 
-        public static ConstantTensor LoadConstant(TensorProto tensorProto, string directoryPath = null)
+        /// <summary>
+        /// Converts bytes in the raw_data layout. With <paramref name="keep"/>, float32 and int32 constants
+        /// use <paramref name="bytes"/> as they are; without it, they get a copy.
+        /// </summary>
+        static ConstantTensor FromBytes(TensorShape shape, OnnxDataType dataType, ArraySegment<byte> bytes, bool keep)
         {
-            if (tensorProto.ExternalData != null)
+            ReadOnlySpan<byte> src = bytes;
+            switch (dataType)
             {
-                foreach (var externalData in tensorProto.ExternalData)
-                {
-                    if (externalData.Key != "location")
-                        continue;
-                    var name = externalData.Value;
-                    using var weightStream = File.OpenRead(Path.Combine(directoryPath, name));
-                    return LoadConstant(tensorProto, weightStream);
-                }
+                case OnnxDataType.Float:
+                    CheckLength(src, sizeof(float), shape, dataType);
+                    return new ConstantTensor(shape, DataType.Float, keep ? bytes : src.ToArray());
+                case OnnxDataType.Int32:
+                    CheckLength(src, sizeof(int), shape, dataType);
+                    return new ConstantTensor(shape, DataType.Int, keep ? bytes : src.ToArray());
+                case OnnxDataType.Double:
+                    return FloatFromFloat64(shape, src);
+                case OnnxDataType.Float16:
+                    return FloatFromFloat16(shape, src);
+                case OnnxDataType.Int64:
+                    return IntFromInt64(shape, src);
+                case OnnxDataType.Bool:
+                    return IntFromBool(shape, src);
+                case OnnxDataType.Uint8:
+                    return IntFromUint8(shape, src);
+                case OnnxDataType.Int8:
+                    return IntFromInt8(shape, src);
+                default:
+                    throw new OnnxLayerImportException($"Tensor data type {dataType} is not supported.");
             }
+        }
 
-            var shape = GetShape(tensorProto);
+        static int ElementSize(OnnxDataType dataType) => dataType switch
+        {
+            OnnxDataType.Double or OnnxDataType.Int64 => 8,
+            OnnxDataType.Float or OnnxDataType.Int32 => 4,
+            OnnxDataType.Float16 => 2,
+            OnnxDataType.Bool or OnnxDataType.Uint8 or OnnxDataType.Int8 => 1,
+            _ => throw new OnnxLayerImportException($"Tensor data type {dataType} is not supported.")
+        };
 
-            if (tensorProto.RawData != null && (shape.length == 0 || tensorProto.RawData.Length != 0))
-            {
-                return GetTensorData(tensorProto.RawData, tensorProto.RawData.Length, shape, (TensorProto.Types.DataType)tensorProto.DataType);
-            }
-            // Float
-            if (tensorProto.DataType == (int)TensorProto.Types.DataType.Float)
-            {
-                Assert.IsTrue(shape.length == tensorProto.FloatData.Count);
-                var arrayData = new float[shape.length];
-                tensorProto.FloatData.CopyTo(arrayData, 0);
-                return new ConstantTensor(shape, DataType.Float, MemoryMarshal.AsBytes(arrayData.AsSpan()).ToArray());
-            }
-            // Int32
-            if (tensorProto.DataType == (int)TensorProto.Types.DataType.Int32)
-            {
-                Assert.IsTrue(shape.length == tensorProto.Int32Data.Count);
-                var arrayData = new int[shape.length];
-                tensorProto.Int32Data.CopyTo(arrayData, 0);
-                return new ConstantTensor(shape, DataType.Int, MemoryMarshal.AsBytes(arrayData.AsSpan()).ToArray());
-            }
-            // Double
-            if (tensorProto.DataType == (int)TensorProto.Types.DataType.Double)
-            {
-                Assert.IsTrue(shape.length == tensorProto.DoubleData.Count);
-                var arrayData = new double[shape.length];
-                tensorProto.DoubleData.CopyTo(arrayData, 0);
-                var floatArrayData = new byte[sizeof(int) * shape.length];
-                unsafe
-                {
-                    fixed (void* dataPtr = &arrayData[0], dstPtr = &floatArrayData[0])
-                    {
-                        var job = new BurstJobsCastTensor.Float64BytesAsFloatJob()
-                        {
-                            src = (long*)dataPtr,
-                            dst = (float*)dstPtr
-                        };
-                        var jobHandle = job.Schedule(shape.length, 32);
-                        jobHandle.Complete();
-                    }
-                }
-                return new ConstantTensor(shape, DataType.Float, floatArrayData);
-            }
-            // Int64
-            if (tensorProto.DataType == (int)TensorProto.Types.DataType.Int64)
-            {
-                Assert.IsTrue(shape.length == tensorProto.Int64Data.Count);
-                var arrayData = new long[shape.length];
-                tensorProto.Int64Data.CopyTo(arrayData, 0);
-                var intArrayData = new byte[sizeof(int) * shape.length];
-                unsafe
-                {
-                    fixed (void* dataPtr = &arrayData[0], dstPtr = &intArrayData[0])
-                    {
-                        var job = new BurstJobsCastTensor.Int64BytesAsIntJob
-                        {
-                            src = (long*)dataPtr,
-                            dst = (int*)dstPtr
-                        };
-                        var jobHandle = job.Schedule(shape.length, 32);
-                        jobHandle.Complete();
-                    }
-                }
-                return new ConstantTensor(shape, DataType.Int, intArrayData);
-            }
+        static void CheckLength(ReadOnlySpan<byte> src, int elementSize, TensorShape shape, OnnxDataType dataType)
+        {
+            if (src.Length != (long)elementSize * shape.length)
+                throw new OnnxLayerImportException($"{dataType} tensor of shape {shape} has {src.Length} bytes of data, expected {(long)elementSize * shape.length}.");
+        }
 
-            throw new OnnxLayerImportException("Could not read tensor data for constant tensor.");
+        // Span versions of the ConstantTensor conversions, so borrowed bytes convert without a copy.
+        // Source offsets are not aligned to the element size; the jobs read unaligned values.
+
+        static unsafe ConstantTensor FloatFromFloat16(TensorShape shape, ReadOnlySpan<byte> src)
+        {
+            CheckLength(src, sizeof(ushort), shape, OnnxDataType.Float16);
+            var dst = new byte[sizeof(float) * shape.length];
+            if (shape.length > 0)
+                fixed (byte* s = src, d = dst)
+                    new BurstJobsCastTensor.Float16BytesAsFloatJob { src = (ushort*)s, dst = (float*)d }.Schedule(shape.length, 32).Complete();
+            return new ConstantTensor(shape, DataType.Float, dst);
+        }
+
+        static unsafe ConstantTensor FloatFromFloat64(TensorShape shape, ReadOnlySpan<byte> src)
+        {
+            CheckLength(src, sizeof(double), shape, OnnxDataType.Double);
+            var dst = new byte[sizeof(float) * shape.length];
+            if (shape.length > 0)
+                fixed (byte* s = src, d = dst)
+                    new BurstJobsCastTensor.Float64BytesAsFloatJob { src = (long*)s, dst = (float*)d }.Schedule(shape.length, 32).Complete();
+            return new ConstantTensor(shape, DataType.Float, dst);
+        }
+
+        static unsafe ConstantTensor IntFromInt64(TensorShape shape, ReadOnlySpan<byte> src)
+        {
+            CheckLength(src, sizeof(long), shape, OnnxDataType.Int64);
+            var dst = new byte[sizeof(int) * shape.length];
+            if (shape.length > 0)
+                fixed (byte* s = src, d = dst)
+                    new BurstJobsCastTensor.Int64BytesAsIntJob { src = (long*)s, dst = (int*)d }.Schedule(shape.length, 32).Complete();
+            return new ConstantTensor(shape, DataType.Int, dst);
+        }
+
+        static unsafe ConstantTensor IntFromBool(TensorShape shape, ReadOnlySpan<byte> src)
+        {
+            CheckLength(src, sizeof(bool), shape, OnnxDataType.Bool);
+            var dst = new byte[sizeof(int) * shape.length];
+            if (shape.length > 0)
+                fixed (byte* s = src, d = dst)
+                    new BurstJobsCastTensor.BoolBytesAsIntJob { src = (bool*)s, dst = (int*)d }.Schedule(shape.length, 32).Complete();
+            return new ConstantTensor(shape, DataType.Int, dst);
+        }
+
+        static unsafe ConstantTensor IntFromUint8(TensorShape shape, ReadOnlySpan<byte> src)
+        {
+            CheckLength(src, sizeof(byte), shape, OnnxDataType.Uint8);
+            var dst = new byte[sizeof(int) * shape.length];
+            if (shape.length > 0)
+                fixed (byte* s = src, d = dst)
+                    new BurstJobsCastTensor.Uint8BytesAsIntJob { src = s, dst = (int*)d }.Schedule(shape.length, 32).Complete();
+            return new ConstantTensor(shape, DataType.Int, dst);
+        }
+
+        static unsafe ConstantTensor IntFromInt8(TensorShape shape, ReadOnlySpan<byte> src)
+        {
+            CheckLength(src, sizeof(sbyte), shape, OnnxDataType.Int8);
+            var dst = new byte[sizeof(int) * shape.length];
+            if (shape.length > 0)
+                fixed (byte* s = src, d = dst)
+                    new BurstJobsCastTensor.Int8BytesAsIntJob { src = (sbyte*)s, dst = (int*)d }.Schedule(shape.length, 32).Complete();
+            return new ConstantTensor(shape, DataType.Int, dst);
         }
 
         static TensorShape GetShape(TensorProto tensorProto)
@@ -125,59 +165,6 @@ namespace Doji.AI.InferenceEngine
             }
 
             return new TensorShape(onnxShape);
-        }
-
-        static DataType GetDataType(TensorProto tensorProto)
-        {
-            return ONNXNodeWrapper.DataTypeFromOnnxDataType((TensorProto.Types.DataType)tensorProto.DataType);
-        }
-
-        static ConstantTensor GetTensorData(byte[] byteArray, int length, TensorShape shape, TensorProto.Types.DataType dataType)
-        {
-            // Double
-            if (dataType == TensorProto.Types.DataType.Double)
-            {
-                return ConstantTensor.FloatFromFloat64(shape, byteArray);
-            }
-            // Float32
-            if (dataType == TensorProto.Types.DataType.Float)
-            {
-                Assert.IsTrue(sizeof(float) * shape.length == length);
-                return new ConstantTensor(shape, DataType.Float, byteArray);
-            }
-            // Float16
-            if (dataType == TensorProto.Types.DataType.Float16)
-            {
-                return ConstantTensor.FloatFromFloat16(shape, byteArray);
-            }
-            // Int32
-            if (dataType == TensorProto.Types.DataType.Int32)
-            {
-                Assert.IsTrue(sizeof(int) * shape.length == length);
-                return new ConstantTensor(shape, DataType.Int, byteArray);
-            }
-            // Int64
-            if (dataType == TensorProto.Types.DataType.Int64)
-            {
-                return ConstantTensor.IntFromInt64(shape, byteArray);
-            }
-            // Bool
-            if (dataType == TensorProto.Types.DataType.Bool)
-            {
-                return ConstantTensor.IntFromBool(shape, byteArray);
-            }
-            // Uint8
-            if (dataType == TensorProto.Types.DataType.Uint8)
-            {
-                return ConstantTensor.IntFromUint8(shape, byteArray);
-            }
-            // Int8
-            if (dataType == TensorProto.Types.DataType.Int8)
-            {
-                return ConstantTensor.IntFromInt8(shape, byteArray);
-            }
-
-            throw new OnnxLayerImportException($"Tensor data type {dataType} is not supported.");
         }
     }
 }
