@@ -36,6 +36,11 @@ namespace Doji.AI.InferenceEngine
         internal Dictionary<string, int> DynamicDimConfigs = new();
 
         /// <summary>
+        /// Quantizes the weights of Conv, ConvTranspose, Gather, Gemm and MatMul while loading, or keeps float32 when null.
+        /// </summary>
+        internal QuantizationType? Quantization;
+
+        /// <summary>
         /// Converts an ONNX model to a Sentis `Model` object.
         /// </summary>
         /// <returns>The converted Sentis model.</returns>
@@ -1924,9 +1929,21 @@ namespace Doji.AI.InferenceEngine
                 tensors[input.Name] = inputNode;
             }
 
-            // Read constants from initializer list
+            // Read constants from initializer list. Weights to quantize get a stand-in until the graph is optimized.
+            var weights = Quantization.HasValue ? WeightQuantizer.FindWeights(onnxModel.Graph) : new HashSet<string>();
+            var standIns = new List<(Node node, TensorProto weight)>();
             foreach (TensorProto initializer in onnxModel.Graph.Initializer)
-                tensors[initializer.Name] = gm.Constant(LoadConstant(initializer));
+            {
+                if (weights.Contains(initializer.Name))
+                {
+                    tensors[initializer.Name] = WeightQuantizer.AddStandIn(gm, initializer);
+                    standIns.Add((tensors[initializer.Name], initializer));
+                }
+                else
+                {
+                    tensors[initializer.Name] = gm.Constant(LoadConstant(initializer));
+                }
+            }
 
             // NOTE: It's questionable whether we should be doing this since the ONNX specification requires the graph to be
             // topologically sorted, but at least one network encountered that was exported from keras2onnx v1.7.0 produced
@@ -1963,6 +1980,13 @@ namespace Doji.AI.InferenceEngine
             if (!ImportWarnings.Any(w => w.messageSeverity == WarningType.Error))
             {
                 ModelOptimizer.OptimizeGraph(gm);
+            }
+
+            if (standIns.Count > 0)
+            {
+                using var backend = new CPUBackend();
+                foreach (var (node, weight) in standIns)
+                    WeightQuantizer.Replace(gm, node, () => LoadConstant(weight), Quantization.Value, backend);
             }
 
             var model = GraphConverter.GraphToModel(gm);

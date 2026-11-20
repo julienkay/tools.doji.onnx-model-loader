@@ -161,6 +161,43 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
             }
         }
 
+        [TestCase(QuantizationType.Uint8, "DequantizeUint8", DataType.Byte, 0.03f)]
+        [TestCase(QuantizationType.Float16, "Cast", DataType.Short, 0f)]
+        public void Load_WithQuantization_QuantizesWeights(QuantizationType quantization, string dequantizeOp, DataType weightType, float tolerance)
+        {
+            // Y = MatMul(X, W) with W 3x2. X is all ones, so Y has the column sums of W in each row.
+            var node = new ProtoWriter().String(1, "X").String(1, "W").String(2, "Y").String(4, "MatMul");
+            var values = new ProtoWriter();
+            foreach (var value in new[] { 1f, -2f, 0.5f, 3f, -1f, 2f })
+                values.RawFloat(value);
+            var weight = new ProtoWriter()
+                .PackedInt64(1, 3, 2)
+                .Int64(2, ProtoWriter.DataTypeFloat)
+                .String(8, "W")
+                .Bytes(9, values.ToArray());
+
+            var modelPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".onnx");
+            try
+            {
+                File.WriteAllBytes(modelPath, BuildSingleNodeModel(node, weight));
+                var model = OnnxModelLoader.Load(modelPath, quantization);
+
+                Assert.That(model.inputs, Has.Count.EqualTo(1), "The stand-in of the weight is no input.");
+                Assert.That(model.layers.Select(layer => layer.opName), Does.Contain(dequantizeOp));
+                Assert.That(model.constants.Select(constant => constant.dataType), Does.Contain(weightType));
+
+                using var worker = new Worker(model, BackendType.CPU);
+                using var input = new Tensor<float>(new TensorShape(1, 1, 3, 3), Enumerable.Repeat(1f, 9).ToArray());
+                worker.Schedule(input);
+                var output = ((Tensor<float>)worker.PeekOutput()).DownloadToArray();
+                Assert.That(output, Is.EqualTo(new[] { 0.5f, 3f, 0.5f, 3f, 0.5f, 3f }).Within(tolerance));
+            }
+            finally
+            {
+                File.Delete(modelPath);
+            }
+        }
+
         static ProtoWriter ConvNode()
         {
             return new ProtoWriter()

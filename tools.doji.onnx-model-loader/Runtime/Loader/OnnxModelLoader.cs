@@ -7,9 +7,16 @@ namespace Doji.AI
 {
     public static class OnnxModelLoader
     {
-        public static Model Load(string filePath)
+        public static Model Load(string filePath) => Load(filePath, null);
+
+        /// <summary>
+        /// Loads an ONNX model and quantizes its weights while loading, one weight at a time, so a model larger than
+        /// the memory can load. The weights are those <see cref="ModelQuantizer.QuantizeWeights"/> quantizes, except
+        /// rank-1 tensors such as biases. Null keeps float32 weights.
+        /// </summary>
+        public static Model Load(string filePath, QuantizationType? quantization)
         {
-            var converter = new ONNXModelConverter();
+            var converter = new ONNXModelConverter { Quantization = quantization };
             return converter.Convert(filePath);
         }
 
