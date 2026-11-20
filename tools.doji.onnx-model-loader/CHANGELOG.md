@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `OnnxModelLoader.Load(path, quantization)` quantizes weights to float16 or uint8 while loading, one weight at a time, so models larger than the memory load. It quantizes what `ModelQuantizer.QuantizeWeights` quantizes, except rank-1 tensors such as biases.
+
 ### Fixed
 
 - List attributes (`INTS`, `FLOATS`, `STRINGS`), such as Conv `pads`, `kernel_shape` and `strides`, are read instead of silently replaced by defaults. The parser copy had wrong `AttributeType` values.
