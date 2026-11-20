@@ -1985,8 +1985,17 @@ namespace Doji.AI.InferenceEngine
             if (standIns.Count > 0)
             {
                 using var backend = new CPUBackend();
+                long garbage = 0;
                 foreach (var (node, weight) in standIns)
-                    WeightQuantizer.Replace(gm, node, () => LoadConstant(weight), Quantization.Value, backend);
+                {
+                    garbage += WeightQuantizer.Replace(gm, node, () => LoadConstant(weight), Quantization.Value, backend);
+                    // The garbage collector frees large arrays late, so the float32 weights would pile up.
+                    if (garbage > 1L << 30)
+                    {
+                        GC.Collect();
+                        garbage = 0;
+                    }
+                }
             }
 
             var model = GraphConverter.GraphToModel(gm);

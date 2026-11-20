@@ -56,14 +56,15 @@ namespace Doji.AI.InferenceEngine
         /// <summary>
         /// Loads the weight of a stand-in, quantizes it, and replaces the stand-in with the dequantized weight.
         /// </summary>
-        public static void Replace(GraphModule gm, Node standIn, Func<ConstantTensor> loadWeight, QuantizationType quantization, CPUBackend backend)
+        /// <returns>The bytes of the float32 weight it loaded, which are garbage now.</returns>
+        public static long Replace(GraphModule gm, Node standIn, Func<ConstantTensor> loadWeight, QuantizationType quantization, CPUBackend backend)
         {
             if (standIn.erased)
-                return;
+                return 0;
             if (standIn.users.Count == 0)
             {
                 gm.graph.EraseNode(standIn);
-                return;
+                return 0;
             }
 
             var weight = loadWeight();
@@ -78,6 +79,7 @@ namespace Doji.AI.InferenceEngine
                 var quantized = GraphPassUtil.AddConstant(gm, standIn, new ConstantTensor(weight.shape, DataType.Byte, data));
                 GraphPassUtil.ReplaceNode(standIn, "DequantizeUint8", new Argument[] { quantized, scale, zeroPoint });
             }
+            return weight.array.Count;
         }
 
         /// <summary>
