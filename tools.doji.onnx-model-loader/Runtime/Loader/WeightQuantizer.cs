@@ -54,10 +54,12 @@ namespace Doji.AI.InferenceEngine
         }
 
         /// <summary>
-        /// Loads the weight of a stand-in, quantizes it, and replaces the stand-in with the dequantized weight.
+        /// Loads the weight of a stand-in, quantizes it, and replaces the stand-in with the dequantized weight. The
+        /// weight is dequantized right before its first use, so only the float32 weights in use are on the device.
         /// </summary>
+        /// <param name="order">The position of each node in the graph.</param>
         /// <returns>The bytes of the float32 weight it loaded, which are garbage now.</returns>
-        public static long Replace(GraphModule gm, Node standIn, Func<ConstantTensor> loadWeight, QuantizationType quantization, CPUBackend backend)
+        public static long Replace(GraphModule gm, Node standIn, IReadOnlyDictionary<Node, int> order, Func<ConstantTensor> loadWeight, QuantizationType quantization, CPUBackend backend)
         {
             if (standIn.erased)
                 return 0;
@@ -67,18 +69,36 @@ namespace Doji.AI.InferenceEngine
                 return 0;
             }
 
+            Node firstUser = null;
+            foreach (var user in standIn.users)
+            {
+                if (firstUser == null || order[user] < order[firstUser])
+                    firstUser = user;
+            }
+
             var weight = loadWeight();
+            Node quantized;
+            string op;
+            Argument[] args;
             if (quantization == QuantizationType.Float16)
             {
-                var quantized = GraphPassUtil.AddConstant(gm, standIn, new ConstantTensor(weight.shape, DataType.Short, ToHalf(weight)));
-                GraphPassUtil.ReplaceNode(standIn, "Cast", new Argument[] { quantized, DataType.Float });
+                quantized = GraphPassUtil.AddConstant(gm, standIn, new ConstantTensor(weight.shape, DataType.Short, ToHalf(weight)));
+                op = "Cast";
+                args = new Argument[] { quantized, DataType.Float };
             }
             else
             {
                 var (data, scale, zeroPoint) = ToUint8(weight, backend);
-                var quantized = GraphPassUtil.AddConstant(gm, standIn, new ConstantTensor(weight.shape, DataType.Byte, data));
-                GraphPassUtil.ReplaceNode(standIn, "DequantizeUint8", new Argument[] { quantized, scale, zeroPoint });
+                quantized = GraphPassUtil.AddConstant(gm, standIn, new ConstantTensor(weight.shape, DataType.Byte, data));
+                op = "DequantizeUint8";
+                args = new Argument[] { quantized, scale, zeroPoint };
             }
+
+            Node dequantized;
+            using (gm.graph.InsertingBefore(firstUser))
+                dequantized = gm.graph.CallFunction(op, args);
+            standIn.ReplaceAllUsesWith(dequantized);
+            gm.graph.EraseNode(standIn);
             return weight.array.Count;
         }
 
