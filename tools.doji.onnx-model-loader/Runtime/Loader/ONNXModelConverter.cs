@@ -44,7 +44,15 @@ namespace Doji.AI.InferenceEngine
         /// Converts an ONNX model to a Sentis `Model` object.
         /// </summary>
         /// <returns>The converted Sentis model.</returns>
-        public override Model Convert(string filePath) {
+        public override Model Convert(string filePath) => Convert(filePath, null);
+
+        /// <summary>
+        /// Converts an ONNX model and saves it as a .sentis file. Float32 weights go from the ONNX file to the .sentis
+        /// file one chunk at a time, so they never are all in memory.
+        /// </summary>
+        internal void Save(string filePath, string sentisPath) => Convert(filePath, sentisPath);
+
+        Model Convert(string filePath, string sentisPath) {
             m_FilePath = filePath;
             m_DirectoryPath = Path.GetDirectoryName(Path.GetFullPath(m_FilePath));
 
@@ -57,7 +65,10 @@ namespace Doji.AI.InferenceEngine
             Model model;
             try
             {
+                m_StreamWeights = sentisPath != null;
                 model = ConvertOnnxModel(m_ModelData.Model);
+                if (sentisPath != null && !HasErrors)
+                    StreamedModelWriter.Save(sentisPath, model, c => LoadConstant(m_StreamedWeights[c.index]).array);
             }
             catch (Exception e) when (e is OnnxImportException || e is LayerImportException || HasErrors)
             {
@@ -68,6 +79,7 @@ namespace Doji.AI.InferenceEngine
                 m_ExternalData.Dispose();
                 m_ExternalData = null;
                 m_ModelData = null;
+                m_StreamedWeights.Clear();
             }
 
             if (HasErrors)
@@ -80,6 +92,9 @@ namespace Doji.AI.InferenceEngine
         }
 
         OnnxModelData m_ModelData;
+        // Saving streams the float32 weights: their constants have no data until StreamedModelWriter loads it.
+        bool m_StreamWeights;
+        readonly Dictionary<int, TensorProto> m_StreamedWeights = new();
         OnnxExternalDataReader m_ExternalData;
         bool m_BorrowTensorData;
 
@@ -1930,7 +1945,7 @@ namespace Doji.AI.InferenceEngine
             }
 
             // Read constants from initializer list. Weights to quantize get a stand-in until the graph is optimized.
-            var weights = Quantization.HasValue ? WeightQuantizer.FindWeights(onnxModel.Graph) : new HashSet<string>();
+            var weights = Quantization.HasValue || m_StreamWeights ? WeightQuantizer.FindWeights(onnxModel.Graph) : new HashSet<string>();
             var standIns = new List<(Node node, TensorProto weight)>();
             foreach (TensorProto initializer in onnxModel.Graph.Initializer)
             {
@@ -1982,7 +1997,7 @@ namespace Doji.AI.InferenceEngine
                 ModelOptimizer.OptimizeGraph(gm);
             }
 
-            if (standIns.Count > 0)
+            if (standIns.Count > 0 && Quantization.HasValue)
             {
                 using var backend = new CPUBackend();
                 var order = new Dictionary<Node, int>();
@@ -2001,7 +2016,16 @@ namespace Doji.AI.InferenceEngine
                 }
             }
 
+            if (!Quantization.HasValue)
+            {
+                foreach (var (node, _) in standIns)
+                    if (!node.erased && node.users.Count == 0)
+                        gm.graph.EraseNode(node);
+            }
+
             var model = GraphConverter.GraphToModel(gm);
+            if (!Quantization.HasValue)
+                StandInsToConstants(model, standIns);
 
             model.ProducerName = onnxModel.ProducerName;
             if (!string.IsNullOrEmpty(onnxModel.ProducerVersion))
@@ -2019,6 +2043,28 @@ namespace Doji.AI.InferenceEngine
             MetadataLoaded?.Invoke(CreateMetadata(onnxModel));
 
             return model;
+        }
+
+        /// <summary>
+        /// Turns the stand-in inputs into constants without data. Small weights load now, because shape inference
+        /// reads the values of a constant with 16 elements or fewer.
+        /// </summary>
+        void StandInsToConstants(Model model, List<(Node node, TensorProto weight)> standIns)
+        {
+            var weights = standIns.ToDictionary(s => s.weight.Name, s => s.weight);
+            foreach (var input in model.inputs.Where(i => weights.ContainsKey(i.name)).ToList())
+            {
+                var weight = weights[input.name];
+                var shape = input.shape.ToTensorShape();
+                model.inputs.Remove(input);
+                if (shape.length <= TensorShape.maxRank * 2)
+                {
+                    model.constants.Add(new Constant(input.index, LoadConstant(weight)));
+                    continue;
+                }
+                model.constants.Add(new Constant(input.index, shape, checked(shape.length * sizeof(float)), DataType.Float));
+                m_StreamedWeights[input.index] = weight;
+            }
         }
 
         static ONNXModelMetadata CreateMetadata(ModelProto onnxModel)

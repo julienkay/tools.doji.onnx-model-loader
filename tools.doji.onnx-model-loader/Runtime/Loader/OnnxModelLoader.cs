@@ -20,6 +20,17 @@ namespace Doji.AI
             return converter.Convert(filePath);
         }
 
+        /// <summary>
+        /// Converts an ONNX model to a .sentis file. Unlike <see cref="Load(string, QuantizationType?)"/> and
+        /// <see cref="ModelWriter.Save(string, Model)"/>, it never holds all float32 weights in memory: they go from
+        /// the ONNX file to the .sentis file one chunk at a time.
+        /// </summary>
+        public static void Save(string filePath, string sentisPath, QuantizationType? quantization = null)
+        {
+            var converter = new ONNXModelConverter { Quantization = quantization };
+            converter.Save(filePath, sentisPath);
+        }
+
         public static ONNXModelMetadata LoadMetadata(string filePath)
         {
             var converter = new ONNXModelConverter();

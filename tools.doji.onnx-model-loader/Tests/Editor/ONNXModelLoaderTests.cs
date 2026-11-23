@@ -198,6 +198,49 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
             }
         }
 
+        // A weight of 16 elements or fewer loads with the model; a larger one loads while the file is written.
+        [TestCase(2)]
+        [TestCase(8)]
+        public void Save_StreamsWeights_SameOutputAsLoad(int columns)
+        {
+            // Y = MatMul(X, W) with W 3 x columns.
+            var node = new ProtoWriter().String(1, "X").String(1, "W").String(2, "Y").String(4, "MatMul");
+            var values = new ProtoWriter();
+            for (var i = 0; i < 3 * columns; i++)
+                values.RawFloat(i * 0.25f - 1f);
+            var weight = new ProtoWriter()
+                .PackedInt64(1, 3, columns)
+                .Int64(2, ProtoWriter.DataTypeFloat)
+                .String(8, "W")
+                .Bytes(9, values.ToArray());
+
+            var modelPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".onnx");
+            var sentisPath = Path.ChangeExtension(modelPath, ".sentis");
+            try
+            {
+                File.WriteAllBytes(modelPath, BuildSingleNodeModel(node, weight));
+                OnnxModelLoader.Save(modelPath, sentisPath);
+                var saved = ModelLoader.Load(sentisPath);
+                Assert.That(saved.inputs, Has.Count.EqualTo(1), "The stand-in of the weight is no input.");
+
+                var input = Enumerable.Range(0, 9).Select(i => i - 4f).ToArray();
+                Assert.That(Run(saved, input), Is.EqualTo(Run(OnnxModelLoader.Load(modelPath), input)));
+            }
+            finally
+            {
+                File.Delete(modelPath);
+                File.Delete(sentisPath);
+            }
+        }
+
+        static float[] Run(Model model, float[] input)
+        {
+            using var worker = new Worker(model, BackendType.CPU);
+            using var tensor = new Tensor<float>(new TensorShape(1, 1, 3, 3), input);
+            worker.Schedule(tensor);
+            return ((Tensor<float>)worker.PeekOutput()).DownloadToArray();
+        }
+
         static ProtoWriter ConvNode()
         {
             return new ProtoWriter()
