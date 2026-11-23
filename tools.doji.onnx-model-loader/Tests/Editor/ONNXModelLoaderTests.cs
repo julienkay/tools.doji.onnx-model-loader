@@ -233,6 +233,22 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
             }
         }
 
+        [Test]
+        public void ChunkHeader_MatchesFlatBufferBuilder([NUnit.Framework.Range(0, 8)] int length)
+        {
+            var data = Enumerable.Range(1, length).Select(i => (byte)i).ToArray();
+            var builder = new Unity.InferenceEngine.Google.FlatBuffers.FlatBufferBuilder(32 + length);
+            var storage = SentisFlatBuffer.Buffer.CreateStorageVectorBlock(builder, data);
+            SentisFlatBuffer.Buffer.StartBuffer(builder);
+            SentisFlatBuffer.Buffer.AddStorage(builder, storage);
+            builder.FinishSizePrefixed(SentisFlatBuffer.Buffer.EndBuffer(builder).Value);
+
+            var streamed = StreamedModelWriter.ChunkHeader(length)
+                .Concat(data)
+                .Concat(new byte[StreamedModelWriter.ChunkPadding(length)]);
+            Assert.That(streamed.ToArray(), Is.EqualTo(builder.DataBuffer.ToSizedArray()));
+        }
+
         static float[] Run(Model model, float[] input)
         {
             using var worker = new Worker(model, BackendType.CPU);

@@ -8,9 +8,9 @@ using Unity.InferenceEngine.Google.FlatBuffers;
 namespace Doji.AI.InferenceEngine
 {
     /// <summary>
-    /// Writes a .sentis file as <see cref="ModelWriter.Save(string, Model)"/> does, but one weights chunk at a time,
-    /// and reads the data of a constant only when its chunk is written. <see cref="ModelWriter"/> holds every chunk
-    /// in memory before it writes the first one, so it needs twice the size of the weights.
+    /// Writes a .sentis file as <see cref="ModelWriter.Save(string, Model)"/> does, but streams the weights to the file
+    /// one constant at a time, and reads the data of a constant only when it is written. <see cref="ModelWriter"/>
+    /// holds every weights chunk in memory, and a copy of it in a FlatBufferBuilder, before it writes the first one.
     /// </summary>
     static class StreamedModelWriter
     {
@@ -20,41 +20,61 @@ namespace Doji.AI.InferenceEngine
 
         /// <summary>
         /// Saves <paramref name="model"/> to <paramref name="path"/>. A constant without data gets it from
-        /// <paramref name="loadData"/> while its chunk is written, so the file holds a weight that was never in the model.
+        /// <paramref name="loadData"/> while it is written, so the file holds a weight that was never in the model.
         /// </summary>
         public static void Save(string path, Model model, Func<Constant, ArraySegment<byte>> loadData)
         {
-            var description = SaveDescription(model, out var chunks, out var offsets);
+            var description = SaveDescription(model, out var chunks);
             using var stream = File.Create(path);
             stream.Write(description);
+            long garbage = 0;
             foreach (var (constants, length) in chunks)
             {
-                var data = new byte[length];
+                stream.Write(ChunkHeader(length));
                 foreach (var i in constants)
                 {
                     var constant = model.constants[i];
                     if (constant.lengthBytes == 0)
                         continue;
-                    var bytes = constant.array.Array != null ? constant.array : loadData(constant);
+                    var loaded = constant.array.Array == null;
+                    var bytes = loaded ? loadData(constant) : constant.array;
                     if (bytes.Count != constant.lengthBytes)
                         throw new InvalidDataException($"Constant {constant.index} has {bytes.Count} bytes, expected {constant.lengthBytes}.");
-                    System.Buffer.BlockCopy(bytes.Array, bytes.Offset, data, offsets[i], bytes.Count);
+                    stream.Write(bytes);
+                    // The garbage collector frees large arrays late, so the loaded weights would pile up.
+                    if (loaded && (garbage += bytes.Count) > 1L << 30)
+                    {
+                        GC.Collect();
+                        garbage = 0;
+                    }
                 }
-
-                // Preallocate exact size for FlatBuffer otherwise allocator can overshoot max FlatBuffer size for large byte arrays
-                var builder = new FlatBufferBuilder(k_WeightsFlatBufferOverhead + data.Length);
-                var storage = SentisFlatBuffer.Buffer.CreateStorageVectorBlock(builder, data);
-                data = null;
-                SentisFlatBuffer.Buffer.StartBuffer(builder);
-                SentisFlatBuffer.Buffer.AddStorage(builder, storage);
-                var cb = SentisFlatBuffer.Buffer.EndBuffer(builder);
-                builder.FinishSizePrefixed(cb.Value);
-                var buffer = builder.DataBuffer;
-                stream.Write(buffer.ToSpan(buffer.Position, buffer.Length - buffer.Position));
-                builder = null;
-                GC.Collect();
+                stream.Write(new byte[ChunkPadding(length)]);
             }
         }
+
+        /// <summary>
+        /// The bytes before the data of a size-prefixed <c>SentisFlatBuffer.Buffer</c> with a storage vector of
+        /// <paramref name="length"/> bytes, as FlatBufferBuilder writes it: the size, the root offset, 2 bytes of
+        /// padding, the vtable, the table with its storage offset, and the length of the vector.
+        /// </summary>
+        internal static byte[] ChunkHeader(int length)
+        {
+            var header = new byte[28];
+            void Put(int offset, int value) => BitConverter.TryWriteBytes(header.AsSpan(offset), value);
+            void PutShort(int offset, short value) => BitConverter.TryWriteBytes(header.AsSpan(offset), value);
+            Put(0, 24 + length + ChunkPadding(length)); // size of what follows
+            Put(4, 12); // root table, from here
+            PutShort(10, 6); // vtable size
+            PutShort(12, 8); // table size
+            PutShort(14, 4); // storage field, from the table
+            Put(16, 6); // vtable, back from the table
+            Put(20, 4); // storage vector, from here
+            Put(24, length);
+            return header;
+        }
+
+        /// <summary>The zero bytes after the data, so the buffer size is a multiple of 4.</summary>
+        internal static int ChunkPadding(int length) => -length & 3;
 
         static VectorOffset CreateDynamicSizes(FlatBufferBuilder builder, DynamicTensorShape shape)
         {
@@ -81,7 +101,7 @@ namespace Doji.AI.InferenceEngine
         /// The model description of ModelWriter.SaveModel (Inference Engine 2.6), and the layout of the weights:
         /// the constants and length of each chunk, and the offset of each constant in its chunk.
         /// </summary>
-        static byte[] SaveDescription(Model model, out List<(List<int> constants, int length)> chunks, out int[] constantOffsets)
+        static byte[] SaveDescription(Model model, out List<(List<int> constants, int length)> chunks)
         {
             // infer the data types and shapes for the model before saving
             model.InferDataTypesShapes();
@@ -129,7 +149,7 @@ namespace Doji.AI.InferenceEngine
             // constants
             var constantIndexes = new Dictionary<int, int>();
             var constantBufferIndexes = new List<int>();
-            constantOffsets = new int[model.constants.Count];
+            var constantOffsets = new int[model.constants.Count];
             chunks = new List<(List<int>, int)> { (new List<int>(), 0) };
             long weightsTotalLengthBytes = 0;
             for (var i = 0; i < model.constants.Count; i++)
