@@ -25,10 +25,18 @@ namespace Doji.AI
         /// <see cref="ModelWriter.Save(string, Model)"/>, it never holds all float32 weights in memory: they go from
         /// the ONNX file to the .sentis file one chunk at a time.
         /// </summary>
-        public static void Save(string filePath, string sentisPath, QuantizationType? quantization = null)
+        public static void Save(string filePath, string sentisPath, QuantizationType? quantization = null) =>
+            Save(filePath, sentisPath, quantization, null);
+
+        /// <summary>
+        /// Like <see cref="Save(string, string, QuantizationType?)"/>, and calls <paramref name="beforeSave"/> with the
+        /// converted model before it is written, for example to fix input shapes. The constants of the float32 weights
+        /// have no data yet: change only the layers, inputs and outputs.
+        /// </summary>
+        public static void Save(string filePath, string sentisPath, QuantizationType? quantization, System.Action<Model> beforeSave)
         {
             var converter = new ONNXModelConverter { Quantization = quantization };
-            converter.Save(filePath, sentisPath);
+            converter.Save(filePath, sentisPath, beforeSave);
         }
 
         public static ONNXModelMetadata LoadMetadata(string filePath)

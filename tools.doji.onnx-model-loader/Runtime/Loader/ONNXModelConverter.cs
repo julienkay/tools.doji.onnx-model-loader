@@ -50,9 +50,9 @@ namespace Doji.AI.InferenceEngine
         /// Converts an ONNX model and saves it as a .sentis file. Float32 weights go from the ONNX file to the .sentis
         /// file one chunk at a time, so they never are all in memory.
         /// </summary>
-        internal void Save(string filePath, string sentisPath) => Convert(filePath, sentisPath);
+        internal void Save(string filePath, string sentisPath, Action<Model> beforeSave = null) => Convert(filePath, sentisPath, beforeSave);
 
-        Model Convert(string filePath, string sentisPath) {
+        Model Convert(string filePath, string sentisPath, Action<Model> beforeSave = null) {
             m_FilePath = filePath;
             m_DirectoryPath = Path.GetDirectoryName(Path.GetFullPath(m_FilePath));
 
@@ -68,7 +68,10 @@ namespace Doji.AI.InferenceEngine
                 m_StreamWeights = sentisPath != null;
                 model = ConvertOnnxModel(m_ModelData.Model);
                 if (sentisPath != null && !HasErrors)
+                {
+                    beforeSave?.Invoke(model);
                     StreamedModelWriter.Save(sentisPath, model, c => LoadConstant(m_StreamedWeights[c.index]).array);
+                }
             }
             catch (Exception e) when (e is OnnxImportException || e is LayerImportException || HasErrors)
             {
