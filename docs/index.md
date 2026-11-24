@@ -21,5 +21,8 @@ using var worker = new Worker(model, BackendType.GPUCompute);
 [Getting started](manual/getting-started.md) explains installation and the
 assembly reference. [Loading models](manual/loading-models.md) explains
 metadata, input signatures, external weights and errors.
+[Quantization and .sentis files](manual/quantization-and-sentis-files.md)
+explains how to quantize weights while loading, how to convert an ONNX file
+to a `.sentis` file, and which API loads which file.
 
 The [Scripting API](api/index.md) describes every public type and member.

@@ -4,3 +4,5 @@
   href: getting-started.md
 - name: Loading models
   href: loading-models.md
+- name: Quantization and .sentis files
+  href: quantization-and-sentis-files.md

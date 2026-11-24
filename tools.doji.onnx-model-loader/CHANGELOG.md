@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Added
 
-- `OnnxModelLoader.Save(path, sentisPath, quantization, beforeSave)` converts an ONNX model to a .sentis file without holding all float32 weights in memory. `beforeSave` can change the model before it is written, for example to fix input shapes.
+- `OnnxModelLoader.Save(path, sentisPath, quantization, beforeSave)` converts an ONNX model to a .sentis file without holding all weights in memory, quantized or not: each weight is read, quantized and written one at a time. `beforeSave` can change the model before it is written, for example to fix input shapes.
 - `OnnxModelLoader.Load(path, quantization)` quantizes weights to float16 or uint8 while loading, one weight at a time, so models larger than the memory load. It quantizes what `ModelQuantizer.QuantizeWeights` quantizes, except rank-1 tensors such as biases.
 
 ### Fixed

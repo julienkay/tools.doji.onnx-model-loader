@@ -65,6 +65,42 @@ if any error was recorded, with the model file name and every error message
 in plain text. Warnings are logged with `Debug.LogWarning`. A missing external
 weights file throws `FileNotFoundException`.
 
+### Quantization while loading
+
+`Load(path, quantization)` and `Save(path, sentisPath, quantization)` set
+`ONNXModelConverter.Quantization`. `WeightQuantizer.FindWeights` picks the
+float initializers of rank 2 or more that are the weight input of `MatMul`,
+`Gemm`, `Conv`, `ConvTranspose` or `Gather`. Each gets a float32 stand-in
+input (`AddStandIn`) instead of a constant, so `ModelOptimizer` cannot fold a
+dequantized weight back into float32. After optimization,
+`WeightQuantizer.Replace` loads each weight, quantizes it, and replaces the
+stand-in with a `Cast` (float16) or `DequantizeUint8` (uint8) layer right
+before the first user. The converter collects garbage after every 1 GB of
+float32 weights it loaded.
+
+### Saving
+
+`Save` writes with `StreamedModelWriter` instead of `ModelWriter`, which holds
+every weights chunk, and a copy of it, before it writes. A weight of more than
+16 elements is a constant without data (`array.Array == null`) until the
+writer reaches it; the writer calls the converter, which loads the weight
+then (`m_StreamedWeights`). So `Save` holds one weight at a time:
+
+- float32 (no quantization): the stand-in becomes a float32 constant without
+  data (`StandInsToConstants`).
+- float16: `Replace` puts a `DataType.Short` input in place of the quantized
+  constant and does not load the weight. `QuantizedInputsToConstants` turns
+  it into a constant without data; the writer loads the weight and runs
+  `ToHalf`.
+- uint8: the scale and zero point are layer arguments, so `Replace` loads the
+  weight once to compute them (`Uint8Range`) and drops it. The writer loads it
+  a second time and quantizes it with that scale and zero point. uint8 reads
+  these weights twice.
+
+A weight of 16 elements or fewer gets its data during conversion, because
+shape inference reads the values of such a constant. The saved file is the
+same model that `Load` with the same quantization returns.
+
 ## Streaming readers
 
 Some callers need model data before a full conversion.
@@ -96,7 +132,7 @@ ONNX import APIs.
 
 | File | Covers |
 |---|---|
-| `ONNXModelLoaderTests.cs` | Conversion of the models in `Tests/Editor/Models`, a Conv with `pads` run on the CPU, metadata reads that skip the graph |
+| `ONNXModelLoaderTests.cs` | Conversion of the models in `Tests/Editor/Models`, a Conv with `pads` run on the CPU, metadata reads that skip the graph, quantization while loading, `Save` with and without quantization: same output as `Load`, and weights without data until they are written |
 | `ConstantEncodingTests.cs` | Initializers in `raw_data`, typed fields, float16, double and external data with an offset give the same values; borrowed and converted constants |
 | `ONNXNodeWrapperTests.cs` | INTS, FLOATS, and STRINGS attributes parsed from wire bytes |
 | `LstmActivationArgumentsTests.cs` | LSTM `activation_alpha` and `activation_beta` assignment and defaults |

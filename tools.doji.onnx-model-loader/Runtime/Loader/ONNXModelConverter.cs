@@ -47,8 +47,8 @@ namespace Doji.AI.InferenceEngine
         public override Model Convert(string filePath) => Convert(filePath, null);
 
         /// <summary>
-        /// Converts an ONNX model and saves it as a .sentis file. Float32 weights go from the ONNX file to the .sentis
-        /// file one chunk at a time, so they never are all in memory.
+        /// Converts an ONNX model and saves it as a .sentis file. Each weight goes from the ONNX file to the .sentis
+        /// file when it is written, quantized if <see cref="Quantization"/> is set, so the weights are never all in memory.
         /// </summary>
         internal void Save(string filePath, string sentisPath, Action<Model> beforeSave = null) => Convert(filePath, sentisPath, beforeSave);
 
@@ -70,7 +70,7 @@ namespace Doji.AI.InferenceEngine
                 if (sentisPath != null && !HasErrors)
                 {
                     beforeSave?.Invoke(model);
-                    StreamedModelWriter.Save(sentisPath, model, c => LoadConstant(m_StreamedWeights[c.index]).array);
+                    StreamedModelWriter.Save(sentisPath, model, c => m_StreamedWeights[c.index]());
                 }
             }
             catch (Exception e) when (e is OnnxImportException || e is LayerImportException || HasErrors)
@@ -95,9 +95,10 @@ namespace Doji.AI.InferenceEngine
         }
 
         OnnxModelData m_ModelData;
-        // Saving streams the float32 weights: their constants have no data until StreamedModelWriter loads it.
+        // Saving streams the weights: their constants have no data until StreamedModelWriter loads it, and a
+        // quantized weight is quantized only then.
         bool m_StreamWeights;
-        readonly Dictionary<int, TensorProto> m_StreamedWeights = new();
+        readonly Dictionary<int, Func<ArraySegment<byte>>> m_StreamedWeights = new();
         OnnxExternalDataReader m_ExternalData;
         bool m_BorrowTensorData;
 
@@ -2000,6 +2001,7 @@ namespace Doji.AI.InferenceEngine
                 ModelOptimizer.OptimizeGraph(gm);
             }
 
+            var quantizedWeights = new Dictionary<string, (TensorProto weight, Func<ConstantTensor, byte[]> quantize)>();
             if (standIns.Count > 0 && Quantization.HasValue)
             {
                 using var backend = new CPUBackend();
@@ -2009,7 +2011,11 @@ namespace Doji.AI.InferenceEngine
                 long garbage = 0;
                 foreach (var (node, weight) in standIns)
                 {
-                    garbage += WeightQuantizer.Replace(gm, node, order, () => LoadConstant(weight), Quantization.Value, backend);
+                    var deferred = m_StreamWeights ? new Dictionary<string, Func<ConstantTensor, byte[]>>() : null;
+                    garbage += WeightQuantizer.Replace(gm, node, order, () => LoadConstant(weight), Quantization.Value, backend, deferred);
+                    if (deferred != null)
+                        foreach (var (name, quantize) in deferred)
+                            quantizedWeights[name] = (weight, quantize);
                     // The garbage collector frees large arrays late, so the float32 weights would pile up.
                     if (garbage > 1L << 30)
                     {
@@ -2029,6 +2035,7 @@ namespace Doji.AI.InferenceEngine
             var model = GraphConverter.GraphToModel(gm);
             if (!Quantization.HasValue)
                 StandInsToConstants(model, standIns);
+            QuantizedInputsToConstants(model, quantizedWeights);
 
             model.ProducerName = onnxModel.ProducerName;
             if (!string.IsNullOrEmpty(onnxModel.ProducerVersion))
@@ -2066,7 +2073,23 @@ namespace Doji.AI.InferenceEngine
                     continue;
                 }
                 model.constants.Add(new Constant(input.index, shape, checked(shape.length * sizeof(float)), DataType.Float));
-                m_StreamedWeights[input.index] = weight;
+                m_StreamedWeights[input.index] = () => LoadConstant(weight).array;
+            }
+        }
+
+        /// <summary>
+        /// Turns the inputs that stand for quantized weights into constants without data. Each weight loads and
+        /// quantizes while the file is written, so the quantized weights are never all in memory.
+        /// </summary>
+        void QuantizedInputsToConstants(Model model, Dictionary<string, (TensorProto weight, Func<ConstantTensor, byte[]> quantize)> quantizedWeights)
+        {
+            foreach (var input in model.inputs.Where(i => quantizedWeights.ContainsKey(i.name)).ToList())
+            {
+                var (weight, quantize) = quantizedWeights[input.name];
+                var shape = input.shape.ToTensorShape();
+                model.inputs.Remove(input);
+                model.constants.Add(new Constant(input.index, shape, WeightQuantizer.QuantizedLengthBytes(shape.length, input.dataType), input.dataType));
+                m_StreamedWeights[input.index] = () => new ArraySegment<byte>(quantize(LoadConstant(weight)));
             }
         }
 
