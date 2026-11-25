@@ -53,6 +53,7 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
 
         // ---- ONNX helpers ----
 
+        public const int AttributeTypeFloat = 1;
         public const int AttributeTypeInts = 7;
         public const int AttributeTypeFloats = 6;
         public const int AttributeTypeString = 3;
@@ -63,6 +64,12 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
         public static ProtoWriter IntsAttribute(string name, params long[] values)
         {
             return new ProtoWriter().String(1, name).Int64(20, AttributeTypeInts).PackedInt64(8, values);
+        }
+
+        /// <summary>An AttributeProto of type FLOAT.</summary>
+        public static ProtoWriter FloatAttribute(string name, float value)
+        {
+            return new ProtoWriter().String(1, name).Int64(20, AttributeTypeFloat).Tag(2, 5).RawFloat(value);
         }
 
         /// <summary>An AttributeProto of type STRING.</summary>

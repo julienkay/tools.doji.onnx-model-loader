@@ -339,6 +339,60 @@ namespace Doji.AI.InferenceEngine
         }
 
         /// <summary>
+        /// The domain of the ONNX operators that tools.doji.sentis-utils adds to Sentis.
+        /// </summary>
+        public const string DojiDomain = "ai.doji";
+
+        /// <summary>
+        /// The operators of <see cref="DojiDomain"/>. Each one is a Sentis layer of the same name that
+        /// tools.doji.sentis-utils adds. The loader refers to them by name, so it compiles without that package.
+        /// </summary>
+        static readonly HashSet<string> s_DojiOperators = new() { "GatedDeltaRule" };
+
+        /// <summary>
+        /// Checks if an ONNX operator of a domain is supported by Sentis.
+        /// </summary>
+        public static bool IsOperatorSupported(string domain, string opTypeString)
+        {
+            return domain == DojiDomain ? s_DojiOperators.Contains(opTypeString) : IsOperatorSupported(opTypeString);
+        }
+
+        /// <summary>
+        /// A node of <see cref="DojiDomain"/>: the inputs of the node, then its attributes in the order of the
+        /// fields of the layer.
+        /// </summary>
+        static Node[] OnDojiNode(GraphModule gm, ONNXNodeWrapper node, Node[] inputs)
+        {
+            Argument[] args;
+            switch (node.OperatorType)
+            {
+                case "GatedDeltaRule":
+                    args = new Argument[] { inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], inputs[5], node.GetRequiredFloat("scale") };
+                    break;
+                default:
+                    throw new OnnxUnsupportedOpException($"{DojiDomain}.{node.OperatorType}");
+            }
+            // Null when Sentis has no layer of that name, that is, without tools.doji.sentis-utils.
+            var output = FunctionalLayer.InferPartial(node.OperatorType, args);
+            if (output == null)
+                throw new OnnxUnsupportedOpException($"{DojiDomain}.{node.OperatorType} (needs the package tools.doji.sentis-utils)");
+            var layerNode = gm.graph.CallFunction(node.OperatorType, args);
+            if (output is PartialTensor partialTensor)
+            {
+                layerNode.partialTensor = partialTensor;
+                return new[] { layerNode };
+            }
+            var partialTensors = (PartialTensor[])output;
+            var outputs = new Node[partialTensors.Length];
+            for (var i = 0; i < outputs.Length; i++)
+            {
+                outputs[i] = gm.graph.CallFunction("getitem", new Argument[] { layerNode, i });
+                outputs[i].partialTensor = partialTensors[i];
+            }
+            return outputs;
+        }
+
+        /// <summary>
         /// Assigns LSTM <c>activation_alpha</c> and <c>activation_beta</c> values to
         /// <paramref name="activations"/> as ONNX Runtime does: values are consumed in order,
         /// only by activations that take that argument. Activations without a value get the
@@ -405,6 +459,12 @@ namespace Doji.AI.InferenceEngine
             {
                 for (var i = 0; i < outputs.Length; i++)
                     SetOutput(outputs[i], i);
+            }
+
+            if (node.Domain == DojiDomain)
+            {
+                SetOutputs(OnDojiNode(gm, node, GetInputs()));
+                return;
             }
 
             var opTypeString = node.OperatorType;
@@ -2173,7 +2233,7 @@ namespace Doji.AI.InferenceEngine
             // Validate node operators and attributes
             foreach (var node in onnxGraph.Node)
             {
-                if (!IsOperatorSupported(node.OpType))
+                if (!IsOperatorSupported(node.Domain, node.OpType))
                 {
                     OnOnnxOperatorUnsupported?.Invoke(node.OpType);
                     unsupportedOperators.Add(node.OpType);

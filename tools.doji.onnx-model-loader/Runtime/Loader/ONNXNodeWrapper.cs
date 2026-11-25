@@ -14,6 +14,7 @@ namespace Doji.AI.InferenceEngine
         List<ModelConverterBase.ImporterWarning> m_ImporterWarnings;
 
         public string OperatorType => m_ONNXNode.OpType;
+        public string Domain => m_ONNXNode.Domain;
 
         // Outputs
         public int OutputCount => m_ONNXNode.Output.Count;

@@ -122,6 +122,52 @@ namespace Doji.AI.ONNXModelLoader.Editor.Tests
             Assert.That(exception.Message, Does.Not.Contain("<b>"));
         }
 
+        /// <summary>
+        /// A node of the ai.doji domain becomes the Sentis layer of the same name, which tools.doji.sentis-utils
+        /// adds. Without that package, the load fails and names it.
+        /// </summary>
+        [Test]
+        public void Load_DojiOperator_BecomesTheLayerOfTheSameName()
+        {
+            string[] inputs = { "q", "k", "v", "g", "beta", "state" };
+            var node = new ProtoWriter();
+            foreach (var input in inputs)
+                node.String(1, input);
+            node.String(2, "o").String(2, "final").String(4, "GatedDeltaRule").String(7, ONNXModelConverter.DojiDomain)
+                .Message(5, ProtoWriter.FloatAttribute("scale", 0.5f));
+            var graph = new ProtoWriter().Message(1, node).String(2, "graph");
+            long[][] shapes = { new long[] { 1, 2, 3, 4 }, new long[] { 1, 2, 3, 4 }, new long[] { 1, 2, 3, 5 }, new long[] { 1, 2, 3 },
+                new long[] { 1, 2, 3 }, new long[] { 1, 3, 4, 5 } };
+            for (var i = 0; i < inputs.Length; i++)
+                graph.Message(11, ProtoWriter.FloatTensorValueInfo(inputs[i], shapes[i]));
+            graph.Message(12, ProtoWriter.FloatTensorValueInfo("o", null)).Message(12, ProtoWriter.FloatTensorValueInfo("final", null));
+            var bytes = new ProtoWriter()
+                .Int64(1, 8)
+                .Message(8, new ProtoWriter().String(1, "").Int64(2, 17))
+                .Message(8, new ProtoWriter().String(1, ONNXModelConverter.DojiDomain).Int64(2, 1))
+                .Message(7, graph)
+                .ToArray();
+            var modelPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".onnx");
+            try
+            {
+                File.WriteAllBytes(modelPath, bytes);
+                bool hasLayer = typeof(Model).Assembly.GetType("Unity.InferenceEngine.Layers.GatedDeltaRule") != null;
+                if (!hasLayer)
+                {
+                    var exception = Assert.Throws<OnnxImportException>(() => OnnxModelLoader.Load(modelPath));
+                    Assert.That(exception.Message, Does.Contain("tools.doji.sentis-utils"));
+                    return;
+                }
+                var model = OnnxModelLoader.Load(modelPath);
+                Assert.That(model.layers.Select(l => l.opName), Is.EqualTo(new[] { "GatedDeltaRule" }));
+                Assert.That(model.outputs.Count, Is.EqualTo(2));
+            }
+            finally
+            {
+                File.Delete(modelPath);
+            }
+        }
+
         [Test]
         public void Load_ConversionError_Throws()
         {
